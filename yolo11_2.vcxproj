@@ -225,6 +225,7 @@
     <ClCompile Include="gui_logger.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mainwindow.cpp" />
+    <ClCompile Include="mjpeg_streamer.cpp" />
     <ClCompile Include="moc_mainwindow.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -233,8 +234,10 @@
     <ClInclude Include="inference_runner.hpp" />
     <ClInclude Include="logger.hpp" />
     <ClInclude Include="mainwindow.hpp" />
+    <ClInclude Include="mjpeg_streamer.hpp" />
     <ClInclude Include="postprocessor.hpp" />
     <ClInclude Include="preprocessor.hpp" />
+    <ClInclude Include="runtime_config.hpp" />
     <ClInclude Include="types.hpp" />
     <ClInclude Include="yolo_trt_engine.hpp" />
   </ItemGroup>

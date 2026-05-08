@@ -302,66 +302,6 @@ void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alar
 }
 
 
-// ============================================================
-// MJPEG 推流
-// ============================================================
-void MainWindow::startMjpegServer() {
-    auto& cfg = RuntimeConfig::instance();
-    mjpegServer_ = new QTcpServer(this);
-    if (!mjpegServer_->listen(QHostAddress::Any, (quint16)cfg.streamPort())) {
-        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("MJPEG"),
-            QString::fromUtf8("服务启动失败, 端口: %1").arg(cfg.streamPort()));
-        return;
-    }
-    connect(mjpegServer_, &QTcpServer::newConnection, this, [this]() {
-        auto* socket = mjpegServer_->nextPendingConnection();
-        if (!socket) return;
-        
-        // 发送HTTP响应头
-        QByteArray header = 
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n"
-            "Connection: keep-alive\r\n"
-            "Cache-Control: no-cache\r\n"
-            "Access-Control-Allow-Origin: *\r\n"
-            "\r\n";
-        socket->write(header);
-        socket->flush();
-        
-        mjpegClients_.append(socket);
-        connect(socket, &QTcpSocket::disconnected, this, [this, socket]() {
-            mjpegClients_.removeAll(socket);
-            socket->deleteLater();
-            GuiLogger::log(ui->logTextEdit, QString::fromUtf8("MJPEG"), "客户端已断开");
-        });
-        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("MJPEG"), "新客户端已连接");
-    });
-    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("MJPEG"),
-        QString::fromUtf8("服务已启动: http://%1:%2/stream")
-            .arg(QString::fromStdString(Config::HOST_IP)).arg(cfg.streamPort()));
-}
-
-void MainWindow::pushMjpegFrame(const QByteArray& jpegData) {
-    if (mjpegClients_.isEmpty()) return;
-
-    // MJPEG推帧频率控制在约30fps (每帧间隔33ms)
-    static auto lastFrameTime = std::chrono::steady_clock::now();
-    auto now = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastFrameTime).count();
-
-    // 如果距离上一帧不足33ms，跳过此帧
-    if (elapsed < 33) return;
-
-    lastFrameTime = now;
-
-    QByteArray chunk = QByteArray("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ")
-        + QByteArray::number(jpegData.size()) + QByteArray("\r\n\r\n")
-        + jpegData + QByteArray("\r\n");
-    auto clients = mjpegClients_;
-    for (auto* c : clients) {
-        if (c->state() == QAbstractSocket::ConnectedState) c->write(chunk);
-    }
-}
 
 // ============================================================
 // MainWindow
@@ -398,8 +338,15 @@ MainWindow::MainWindow(QWidget *parent)
     // 加载运行时配置(JSON)
     loadRuntimeConfig();
 
-    startWebSocketServer();
-    startMjpegServer();
+
+    // 初始化 MJPEG 推流服务
+    mjpegStreamer_ = std::make_unique<MjpegStreamer>();
+    mjpegStreamer_->setLogCallback([this](const QString& cat, const QString& msg) {
+        GuiLogger::log(ui->logTextEdit, cat, msg);
+    });
+    auto& cfg = RuntimeConfig::instance();
+    mjpegStreamer_->start((quint16)cfg.streamPort(), QString::fromStdString(Config::HOST_IP));
+
     if (fs::exists(Config::MODEL_PATH)) onLoadModel();
 
     ui->batchInferenceCheck->setChecked(Config::USE_BATCH_INFERENCE);
@@ -430,9 +377,7 @@ MainWindow::~MainWindow() {
     }
     wsClients_.clear();
     if (wsServer_) wsServer_->close();
-    for (auto* client : mjpegClients_) client->close();
-    mjpegClients_.clear();
-    if (mjpegServer_) { mjpegServer_->close(); delete mjpegServer_; }
+    // MJPEG 推流服务由 unique_ptr 自动管理
     delete ui;
 }
 
@@ -1287,7 +1232,7 @@ void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detect
         buf.open(QIODevice::WriteOnly);
         image.save(&buf, "JPEG", 60);
     }
-    pushMjpegFrame(jpegData);
+    mjpegStreamer_->pushFrame(jpegData);
 
     // 只更新当前活跃显示的摄像头画面
     if (cameraId == activeDisplayCamera_) {

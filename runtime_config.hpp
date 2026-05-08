@@ -158,7 +158,7 @@ private:
     int   ringBufferFrames_  = 90;
     int   alertAfterFrames_  = 60;
     int   alertCooldownMs_   = 10000;
-    QString modelPath_       = "model/your_model.engine";
+    QString modelPath_       = "model/best.engine";
     QString outputDir_       = "output";
     QString recordDir_       = "recordings";
     int   recordKeepDays_    = 7;
