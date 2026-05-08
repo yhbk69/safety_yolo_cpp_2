@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(type *)",
+      "Bash(copy *)",
+      "Bash(chcp *)",
+      "Bash(findstr *)",
+      "Bash(powershell *)",
+      "Bash(git checkout *)",
+      "Bash(cmake *)",
+      "Bash(mkdir *)",
+      "Bash(rmdir *)",
+      "Bash(dir *)"
+    ]
+  },
+  "$version": 3
+}

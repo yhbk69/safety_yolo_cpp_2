@@ -9,8 +9,8 @@
 #      cmake .. -G "Visual Studio 18 2026" -A x64 -DQt5_DIR="C:/Qt/5.15.2/msvc2019_64/lib/cmake/Qt5"
 #      cmake --build . --config Release
 #
-# 注意: CMake 会自动处理 Qt 的 MOC (Meta-Object Compiler),
-# 不需要额外配置, 比 .vcxproj + Qt VS Tools 更简洁
+# 注意: CMake 会自动处??Qt ??MOC (Meta-Object Compiler),
+# 不需要额外配?? ??.vcxproj + Qt VS Tools 更简??
 # ============================================================
 
 cmake_minimum_required(VERSION 3.16)
@@ -20,19 +20,19 @@ project(yolo11_2 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# 启用 UTF-8 源文件编码(解决 Windows 下中文乱码问题)
+# 启用 UTF-8 源文件编??解决 Windows 下中文乱码问??
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
-# 自动生成 MOC 文件(处理 Q_OBJECT 宏, Qt 必需)
+# 自动生成 MOC 文件(处理 Q_OBJECT ?? Qt 必需)
 set(CMAKE_AUTOMOC ON)
 
-# 自动处理 .ui 文件(由 uic 生成 ui_*.h)
+# 自动处理 .ui 文件(??uic 生成 ui_*.h)
 set(CMAKE_AUTOUIC ON)
 
-# ============ 查找依赖库 ============
+# ============ 查找依赖??============
 
 # ---- Qt5 (GUI 框架) ----
-# 安装后设置 Qt5_DIR 环境变量, 或在 cmake 时指定:
+# 安装后设??Qt5_DIR 环境变量, 或在 cmake 时指??
 #   cmake .. -DQt5_DIR="C:/Qt/5.15.2/msvc2019_64/lib/cmake/Qt5"
 find_package(Qt5 REQUIRED COMPONENTS Widgets WebSockets)
 
@@ -40,26 +40,26 @@ find_package(Qt5 REQUIRED COMPONENTS Widgets WebSockets)
 set(OpenCV_DIR "C:/opencv412/opencv/build")
 find_package(OpenCV REQUIRED)
 
-# ---- CUDA (GPU 加速) ----
+# ---- CUDA (GPU 加?? ----
 find_package(CUDA REQUIRED)
 
 # ---- TensorRT (推理引擎) ----
-# TensorRT 没有官方的 CMake 配置文件, 手动指定路径
+# TensorRT 没有官方??CMake 配置文件, 手动指定路径
 set(TENSORRT_DIR "C:/tensorRT10/TensorRT-10.1.0.27")
 set(TENSORRT_INCLUDE_DIR "${TENSORRT_DIR}/include")
 set(TENSORRT_LIB_DIR "${TENSORRT_DIR}/lib")
 
-# ============ 源文件列表 ============
+# ============ 源文件列??============
 set(SOURCES
     main.cpp
     mainwindow.cpp
-    gui_logger.cpp
-    mainwindow.ui        # Qt UI 布局文件(由 Qt Creator 可视化编辑)
+    inference_worker.cpp
+    mainwindow.ui        # Qt UI 布局文件(由 Qt Creator 可可视化编辑)
 )
 
 set(HEADERS
-    mainwindow.hpp         # 含 Q_OBJECT 宏, 需要 MOC 处理
-    gui_logger.hpp
+    mainwindow.hpp         # 包含 Q_OBJECT 需MOC 处理
+    inference_worker.hpp
     config.hpp
     types.hpp
     logger.hpp
@@ -69,19 +69,19 @@ set(HEADERS
     inference_runner.hpp
 )
 
-# ============ 生成可执行文件 ============
+# ============ 生成可执行文??============
 add_executable(yolo11_2 WIN32 ${SOURCES} ${HEADERS})
 
-# ============ 头文件路径 ============
+# ============ 头文件路??============
 target_include_directories(yolo11_2 PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}          # 项目根目录(自身头文件)
+    ${CMAKE_CURRENT_SOURCE_DIR}          # 项目根目??自身头文??
     ${OpenCV_INCLUDE_DIRS}
     ${CUDA_INCLUDE_DIRS}
     ${TENSORRT_INCLUDE_DIR}
 )
 
-# ============ 链接库 ============
-# 指定 TensorRT 库搜索路径(让链接器能找到 nvinfer_10.lib)
+# ============ 链接??============
+# 指定 TensorRT 库搜索路??让链接器能找??nvinfer_10.lib)
 target_link_directories(yolo11_2 PRIVATE ${TENSORRT_LIB_DIR})
 
 target_link_libraries(yolo11_2 PRIVATE
@@ -89,8 +89,8 @@ target_link_libraries(yolo11_2 PRIVATE
     Qt5::WebSockets
     ${OpenCV_LIBS}
     ${CUDA_LIBRARIES}
-    nvinfer_10          # TensorRT 推理库
-    nvonnxparser_10     # TensorRT ONNX 解析器
+    nvinfer_10          # TensorRT 推理??
+    nvonnxparser_10     # TensorRT ONNX 解析??
 )
 
 # ============ 输出信息 ============
@@ -98,3 +98,5 @@ message(STATUS "Qt5 found: ${Qt5Widgets_INCLUDE_DIRS}")
 message(STATUS "OpenCV found: ${OpenCV_INCLUDE_DIRS}")
 message(STATUS "CUDA found: ${CUDA_INCLUDE_DIRS}")
 message(STATUS "TensorRT found: ${TENSORRT_INCLUDE_DIR}")
+
+

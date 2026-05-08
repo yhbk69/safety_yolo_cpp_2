@@ -30,6 +30,7 @@
 
 #include <opencv2/opencv.hpp>
 
+#include "gui_logger.hpp"
 #include "yolo_trt_engine.hpp"
 #include "preprocessor.hpp"
 #include "postprocessor.hpp"

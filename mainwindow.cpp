@@ -1,10 +1,11 @@
-/**
+﻿/**
  * @file mainwindow.cpp
  * @brief YOLO11 TensorRT 推理系统 - 主窗口实现
  */
 
 #include "mainwindow.hpp"
 #include "ui_mainwindow.h"
+#include "gui_logger.hpp"
 
 #include <QAction>
 #include <QFileDialog>
@@ -308,7 +309,7 @@ void MainWindow::startMjpegServer() {
     auto& cfg = RuntimeConfig::instance();
     mjpegServer_ = new QTcpServer(this);
     if (!mjpegServer_->listen(QHostAddress::Any, (quint16)cfg.streamPort())) {
-        log(QString::fromUtf8("MJPEG"),
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("MJPEG"),
             QString::fromUtf8("服务启动失败, 端口: %1").arg(cfg.streamPort()));
         return;
     }
@@ -331,11 +332,11 @@ void MainWindow::startMjpegServer() {
         connect(socket, &QTcpSocket::disconnected, this, [this, socket]() {
             mjpegClients_.removeAll(socket);
             socket->deleteLater();
-            log(QString::fromUtf8("MJPEG"), "客户端已断开");
+            GuiLogger::log(ui->logTextEdit, QString::fromUtf8("MJPEG"), "客户端已断开");
         });
-        log(QString::fromUtf8("MJPEG"), "新客户端已连接");
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("MJPEG"), "新客户端已连接");
     });
-    log(QString::fromUtf8("MJPEG"),
+    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("MJPEG"),
         QString::fromUtf8("服务已启动: http://%1:%2/stream")
             .arg(QString::fromStdString(Config::HOST_IP)).arg(cfg.streamPort()));
 }
@@ -403,8 +404,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     ui->batchInferenceCheck->setChecked(Config::USE_BATCH_INFERENCE);
 
-    log("系统", "YOLO11 PPE 检测系统已启动");
-    log("配置", QString("模型路径: %1").arg(QString::fromStdString(Config::MODEL_PATH)));
+    GuiLogger::log(ui->logTextEdit, "系统", "YOLO11 PPE 检测系统已启动");
+    GuiLogger::log(ui->logTextEdit, "配置", QString("模型路径: %1").arg(QString::fromStdString(Config::MODEL_PATH)));
 }
 
 MainWindow::~MainWindow() {
@@ -451,7 +452,7 @@ void MainWindow::setupConnections() {
     connect(ui->batchInferenceCheck, &QCheckBox::toggled, this, &MainWindow::onBatchInferenceToggled);
     connect(ui->clearLogBtn, &QPushButton::clicked, this, [this]() {
         ui->logTextEdit->clear();
-        log("系统", "日志已清空");
+        GuiLogger::log(ui->logTextEdit, "系统", "日志已清空");
     });
     // 录制按钮
     connect(ui->startRecordBtn, &QPushButton::clicked, this, &MainWindow::onStartRecording);
@@ -474,7 +475,7 @@ void MainWindow::startWebSocketServer() {
     wsServer_ = new QWebSocketServer("YOLO11-Alert", QWebSocketServer::NonSecureMode, this);
     if (!wsServer_->listen(QHostAddress::Any, Config::WEBSOCKET_PORT)) {
         wsAddressLabel_->setText("WebSocket: 启动失败");
-        log("WebSocket", QString("启动失败, 端口: %1").arg(Config::WEBSOCKET_PORT));
+        GuiLogger::log(ui->logTextEdit, "WebSocket", QString("启动失败, 端口: %1").arg(Config::WEBSOCKET_PORT));
         return;
     }
 
@@ -485,7 +486,7 @@ void MainWindow::startWebSocketServer() {
         .arg(QString::fromStdString(Config::HOST_IP))
         .arg(Config::WEBSOCKET_PORT);
     wsAddressLabel_->setText("WebSocket: " + wsAddr);
-    log("WebSocket", QString("服务已启动 %1").arg(wsAddr));
+    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("服务已启动 %1").arg(wsAddr));
 
     // 启动 HTTP 文件服务器
     startHttpFileServer();
@@ -583,13 +584,13 @@ void MainWindow::onWsClientConnected() {
 
     connect(socket, &QWebSocket::textMessageReceived, this, &MainWindow::onWsTextMessage);
     connect(socket, &QWebSocket::disconnected, this, [this, socket]() {
-        log("WebSocket", QString("客户端断开连接, 剩余: %1").arg(wsClients_.size() - 1));
+        GuiLogger::log(ui->logTextEdit, "WebSocket", QString("客户端断开连接, 剩余: %1").arg(wsClients_.size() - 1));
         wsClients_.removeAll(socket);
         socket->deleteLater();
     });
     statusMessageLabel_->setText(
         QString("WebSocket 客户端已连接 (%1)").arg(wsClients_.size()));
-    log("WebSocket", QString("客户端已连接, 当前连接数: %1").arg(wsClients_.size()));
+    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("客户端已连接, 当前连接数: %1").arg(wsClients_.size()));
 }
 
 void MainWindow::onWsTextMessage(const QString& message) {
@@ -610,7 +611,7 @@ void MainWindow::onWsTextMessage(const QString& message) {
         if (client) {
             client->sendTextMessage(pongDoc.toJson(QJsonDocument::Compact));
         }
-        log("WebSocket", "收到 ping, 回复 pong");
+        GuiLogger::log(ui->logTextEdit, "WebSocket", "收到 ping, 回复 pong");
         return;
     }
 
@@ -658,7 +659,7 @@ void MainWindow::onWsTextMessage(const QString& message) {
         pendingAlarms_.erase(it);
         statusMessageLabel_->setText(
             QString("告警 %1 已确认").arg(alarmId.left(8)));
-        log("WebSocket", QString("收到告警确认: %1").arg(alarmId.left(8)));
+        GuiLogger::log(ui->logTextEdit, "WebSocket", QString("收到告警确认: %1").arg(alarmId.left(8)));
     }
 }
 
@@ -673,7 +674,7 @@ void MainWindow::retryAlarm(const QString& alarmId) {
             delete it->retryTimer;
         }
         pendingAlarms_.erase(it);
-        log("告警", QString("告警 %1 重试超限, 已放弃").arg(alarmId.left(8)));
+        GuiLogger::log(ui->logTextEdit, "告警", QString("告警 %1 重试超限, 已放弃").arg(alarmId.left(8)));
         return;
     }
 
@@ -683,14 +684,14 @@ void MainWindow::retryAlarm(const QString& alarmId) {
     }
     statusMessageLabel_->setText(
         QString("重发告警 %1 (%2/%3)").arg(alarmId.left(8)).arg(it->retryCount).arg(MAX_RETRY_COUNT));
-    log("告警", QString("重发告警: %1 (%2/%3)").arg(alarmId.left(8)).arg(it->retryCount).arg(MAX_RETRY_COUNT));
+    GuiLogger::log(ui->logTextEdit, "告警", QString("重发告警: %1 (%2/%3)").arg(alarmId.left(8)).arg(it->retryCount).arg(MAX_RETRY_COUNT));
 }
 
 // ============================================================
 // WebSocket 消息处理 - 同步请求
 // ============================================================
 void MainWindow::handleSyncRequest(const QString& lastAlarmId) {
-    log("WebSocket", QString("收到同步请求, last_alarm_id: %1").arg(lastAlarmId));
+    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("收到同步请求, last_alarm_id: %1").arg(lastAlarmId));
 
     // 找出 last_alarm_id 之后且未确认的告警，逐条推送
     bool foundLast = lastAlarmId.isEmpty();  // 如果为空，推送所有
@@ -710,14 +711,14 @@ void MainWindow::handleSyncRequest(const QString& lastAlarmId) {
             for (auto* client : wsClients_) {
                 client->sendTextMessage(it->jsonMessage);
             }
-            log("WebSocket", QString("同步推送告警: %1").arg(alarmId.left(8)));
+            GuiLogger::log(ui->logTextEdit, "WebSocket", QString("同步推送告警: %1").arg(alarmId.left(8)));
         }
     }
 
     if (lastAlarmId.isEmpty()) {
-        log("WebSocket", "同步完成: 推送所有待确认告警");
+        GuiLogger::log(ui->logTextEdit, "WebSocket", "同步完成: 推送所有待确认告警");
     } else {
-        log("WebSocket", QString("同步完成: last_alarm_id=%1").arg(lastAlarmId.left(8)));
+        GuiLogger::log(ui->logTextEdit, "WebSocket", QString("同步完成: last_alarm_id=%1").arg(lastAlarmId.left(8)));
     }
 }
 
@@ -756,7 +757,7 @@ void MainWindow::handleGetStreams() {
         client->sendTextMessage(jsonStr);
     }
 
-    log("WebSocket", QString("响应摄像头列表: %1 个流").arg(streamsArray.size()));
+    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("响应摄像头列表: %1 个流").arg(streamsArray.size()));
 }
 
 // ============================================================
@@ -776,7 +777,7 @@ void MainWindow::handleSetFence(const QString& streamId, const QJsonObject& fenc
 
     fenceRegions_[streamId] = region;
 
-    log("WebSocket", QString("设置围栏: stream_id=%1, 区域=(%.2f,%.2f,%.2f,%.2f)")
+    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("设置围栏: stream_id=%1, 区域=(%.2f,%.2f,%.2f,%.2f)")
         .arg(streamId).arg(x1).arg(y1).arg(x2).arg(y2));
 
     // 响应确认
@@ -828,7 +829,7 @@ void MainWindow::handleViewStream(const QString& streamId) {
         client->sendTextMessage(QJsonDocument(response).toJson(QJsonDocument::Compact));
     }
 
-    log("WebSocket", QString("请求查看摄像头%1的实时视频").arg(streamId));
+    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("请求查看摄像头%1的实时视频").arg(streamId));
 }
 
 // ============================================================
@@ -865,7 +866,7 @@ void MainWindow::onAlertSaved(int cameraId, const QString& videoPath, const QStr
     QString alarmType = doc.object()["data"].toObject()["alarm_type"].toString();
     statusMessageLabel_->setText(
         QString("[告警] %1 - 视频已保存, 等待确认").arg(alarmType));
-    log("告警", QString("发送告警: %1, ID: %2").arg(alarmType, alarmId.left(8)));
+    GuiLogger::log(ui->logTextEdit, "告警", QString("发送告警: %1, ID: %2").arg(alarmType, alarmId.left(8)));
     qDebug() << "Alarm sent:" << alertJson;
 }
 
@@ -902,14 +903,14 @@ void MainWindow::onLoadModel() {
         ui->modelStatusLabel->setText("✓ 已加载");
         ui->modelStatusLabel->setStyleSheet("color: green; font-weight: bold;");
         statusMessageLabel_->setText("模型加载成功, 可以开始检测");
-        log("模型", QString("模型加载成功: %1").arg(modelPath));
+        GuiLogger::log(ui->logTextEdit, "模型", QString("模型加载成功: %1").arg(modelPath));
         enableControls(true);
         ui->reloadModelBtn->setEnabled(true);
     } catch (const std::exception& e) {
         ui->modelStatusLabel->setText("✗ 加载失败");
         ui->modelStatusLabel->setStyleSheet("color: red; font-weight: bold;");
         statusMessageLabel_->setText("模型加载失败");
-        log("模型", QString("模型加载失败: %1").arg(e.what()));
+        GuiLogger::log(ui->logTextEdit, "模型", QString("模型加载失败: %1").arg(e.what()));
         QMessageBox::critical(this, "模型加载错误", e.what());
         enableControls(false);
     }
@@ -926,7 +927,7 @@ void MainWindow::onReloadModel() {
         QMessageBox::warning(this, "警告", "模型文件不存在:\n" + modelPath);
         return;
     }
-    log("模型", QString("正在热切换模型: %1").arg(modelPath));
+    GuiLogger::log(ui->logTextEdit, "模型", QString("正在热切换模型: %1").arg(modelPath));
     statusMessageLabel_->setText("正在热切换模型...");
     ui->reloadModelBtn->setEnabled(false);
     stopAllCameras();
@@ -937,12 +938,12 @@ void MainWindow::onReloadModel() {
         ui->modelStatusLabel->setText("✓ 已重载");
         ui->modelStatusLabel->setStyleSheet("color: green; font-weight: bold;");
         statusMessageLabel_->setText("模型热切换成功");
-        log("模型", QString("模型热切换成功: %1").arg(modelPath));
+        GuiLogger::log(ui->logTextEdit, "模型", QString("模型热切换成功: %1").arg(modelPath));
     } catch (const std::exception& e) {
         ui->modelStatusLabel->setText("✗ 重载失败");
         ui->modelStatusLabel->setStyleSheet("color: red; font-weight: bold;");
         statusMessageLabel_->setText("模型热切换失败");
-        log("错误", QString("模型热切换失败: %1").arg(e.what()));
+        GuiLogger::log(ui->logTextEdit, "错误", QString("模型热切换失败: %1").arg(e.what()));
         QMessageBox::critical(this, "热切换错误", e.what());
     }
     ui->reloadModelBtn->setEnabled(true);
@@ -957,7 +958,7 @@ void MainWindow::onOpenImage() {
     QString filePath = QFileDialog::getOpenFileName(
         this, "选择图片", "", "图片文件 (*.jpg *.jpeg *.png *.bmp);;所有文件 (*)");
     if (filePath.isEmpty()) return;
-    log("检测", QString("打开图片: %1").arg(filePath));
+    GuiLogger::log(ui->logTextEdit, "检测", QString("打开图片: %1").arg(filePath));
     statusMessageLabel_->setText("正在推理...");
     QApplication::processEvents();
     processSingleImage(filePath.toStdString());
@@ -1005,7 +1006,7 @@ void MainWindow::onOpenVideo() {
         this, QString::fromUtf8("选择视频文件"), "", QString::fromUtf8("视频文件 (*.mp4 *.avi *.mov *.mkv);;所有文件 (*)"));
     if (filePath.isEmpty()) return;
 
-    log("检测", QString("打开视频: %1").arg(filePath));
+    GuiLogger::log(ui->logTextEdit, "检测", QString("打开视频: %1").arg(filePath));
     statusMessageLabel_->setText(QString::fromUtf8("正在处理视频..."));
     enableControls(false);
     ui->cameraBtn->setChecked(false);
@@ -1025,7 +1026,7 @@ void MainWindow::onOpenVideo() {
         ui->stopBtn->setEnabled(false);
         statusMessageLabel_->setText(QString::fromUtf8("视频处理完成"));
         fpsLabel_->setText("FPS: --");
-        log("系统", "视频处理完成");
+        GuiLogger::log(ui->logTextEdit, "系统", "视频处理完成");
         // 视频worker不在cameraWorkers_中, 手动清理
         sender()->deleteLater();
     });
@@ -1052,7 +1053,7 @@ void MainWindow::onOpenCamera(bool checked) {
         // 如果默认摄像头已在运行, 先停止
         if (cameraWorkers_.contains(0)) stopCamera(0);
 
-        log("检测", "启动默认摄像头");
+        GuiLogger::log(ui->logTextEdit, "检测", "启动默认摄像头");
         statusMessageLabel_->setText(QString::fromUtf8("正在启动摄像头..."));
         ui->cameraBtn->setText(QString::fromUtf8("关闭摄像头"));
         ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
@@ -1108,7 +1109,7 @@ void MainWindow::onAddCamera() {
     int camId = nextCameraId_++;
     QString camName = QString("camera_%1").arg(camId);
 
-    log("检测", QString("添加摄像头 %1: %2").arg(camId).arg(source));
+    GuiLogger::log(ui->logTextEdit, "检测", QString("添加摄像头 %1: %2").arg(camId).arg(source));
     activeDisplayCamera_ = camId;
 
     auto* thread = new QThread(this);
@@ -1149,12 +1150,12 @@ void MainWindow::stopCamera(int cameraId) {
     auto it = cameraWorkers_.find(cameraId);
     if (it == cameraWorkers_.end()) return;
 
-    log("系统", QString("正在停止摄像头 %1...").arg(cameraId));
+    GuiLogger::log(ui->logTextEdit, "系统", QString("正在停止摄像头 %1...").arg(cameraId));
 
     // 0. 如果该摄像头正在录制，先停止录制
     auto recIt = cameraRecordings_.find(cameraId);
     if (recIt != cameraRecordings_.end() && recIt.value()->isRecording) {
-        log("录像", QString("摄像头%1正在录制，自动停止录制").arg(cameraId));
+        GuiLogger::log(ui->logTextEdit, "录像", QString("摄像头%1正在录制，自动停止录制").arg(cameraId));
         activeDisplayCamera_ = cameraId;
         onStopRecording();
     }
@@ -1165,7 +1166,7 @@ void MainWindow::stopCamera(int cameraId) {
     // 2. 等待线程退出（缩短超时时间到2秒）
     if (it->thread) {
         if (!it->thread->wait(2000)) {
-            log("系统", QString("摄像头 %1 线程未响应，强制终止").arg(cameraId));
+            GuiLogger::log(ui->logTextEdit, "系统", QString("摄像头 %1 线程未响应，强制终止").arg(cameraId));
             // 不再使用强制释放，避免阻塞
             it->thread->terminate();
             it->thread->wait(500);
@@ -1190,7 +1191,7 @@ void MainWindow::stopCamera(int cameraId) {
         ui->cameraStatusLabel->setText(QString::fromUtf8("● %1路运行").arg(cameraWorkers_.size()));
     }
 
-    log("系统", QString("摄像头 %1 已停止").arg(cameraId));
+    GuiLogger::log(ui->logTextEdit, "系统", QString("摄像头 %1 已停止").arg(cameraId));
 }
 
 void MainWindow::stopAllCameras() {
@@ -1209,7 +1210,7 @@ void MainWindow::onOpenFolder() {
         this, "选择图片文件夹", "", QFileDialog::ShowDirsOnly);
     if (dirPath.isEmpty()) return;
 
-    log("检测", QString("批量处理文件夹: %1").arg(dirPath));
+    GuiLogger::log(ui->logTextEdit, "检测", QString("批量处理文件夹: %1").arg(dirPath));
 
     std::vector<std::string> extensions = {".jpg", ".jpeg", ".png", ".bmp"};
     int total = 0, succ = 0;
@@ -1258,7 +1259,7 @@ void MainWindow::onStopProcessing() {
     ui->stopBtn->setEnabled(false);
     fpsLabel_->setText("FPS: --");
     statusMessageLabel_->setText(QString::fromUtf8("已停止"));
-    log("系统", "所有处理已停止");
+    GuiLogger::log(ui->logTextEdit, "系统", "所有处理已停止");
 }
 
 void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detection> detections, double elapsedMs) {
@@ -1312,7 +1313,7 @@ void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detect
                 detail += QString("%1×%2").arg(cnt).arg(QString::fromStdString(Config::CLASS_NAMES[cid]));
             }
             double fps = (elapsedMs > 0) ? 1000.0 / elapsedMs : 0;
-            log("检测", QString("%1 | %2 | %3ms, FPS:%4")
+            GuiLogger::log(ui->logTextEdit, "检测", QString("%1 | %2 | %3ms, FPS:%4")
                 .arg(detections.size()).arg(detail)
                 .arg(elapsedMs, 0, 'f', 1).arg(fps, 0, 'f', 1));
         }
@@ -1334,7 +1335,7 @@ void MainWindow::onWorkerFinished(int cameraId) {
             ui->cameraStatusLabel->setText(QString::fromUtf8("⏹ 未开启"));
         }
         cameraWorkers_.erase(it);
-        log("系统", QString("摄像头 %1 处理完成").arg(cameraId));
+        GuiLogger::log(ui->logTextEdit, "系统", QString("摄像头 %1 处理完成").arg(cameraId));
     }
 
     // 如果没有任何活跃worker, 重置UI
@@ -1348,7 +1349,7 @@ void MainWindow::onWorkerFinished(int cameraId) {
 }
 
 void MainWindow::onWorkerError(int cameraId, const QString& message) {
-    log("错误", QString("[摄像头%1] %2").arg(cameraId).arg(message));
+    GuiLogger::log(ui->logTextEdit, "错误", QString("[摄像头%1] %2").arg(cameraId).arg(message));
     if (cameraId == 0) {
         ui->cameraBtn->setChecked(false);
     }
@@ -1535,7 +1536,7 @@ void MainWindow::onStartRecording() {
     ui->startRecordBtn->setEnabled(false);
     ui->stopRecordBtn->setEnabled(true);
 
-    log(QString::fromUtf8("录像"), QString::fromUtf8("开始录制: %1 (摄像头%2)").arg(videoPath).arg(cameraId));
+    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("录像"), QString::fromUtf8("开始录制: %1 (摄像头%2)").arg(videoPath).arg(cameraId));
 }
 
 void MainWindow::onStopRecording() {
@@ -1568,7 +1569,7 @@ void MainWindow::onStopRecording() {
         QFile::rename(videoPath, newPath);
     }
 
-    log(QString::fromUtf8("录像"), QString::fromUtf8("停止录制: %1").arg(newPath));
+    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("录像"), QString::fromUtf8("停止录制: %1").arg(newPath));
 
     cameraRecordings_.erase(it);
 
@@ -1585,7 +1586,7 @@ void MainWindow::onViewRecordings() {
     }
     // 打开文件目录
     QDesktopServices::openUrl(QUrl::fromLocalFile(recordDir));
-    log(QString::fromUtf8("录像"), QString::fromUtf8("打开录像目录: %1").arg(recordDir));
+    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("录像"), QString::fromUtf8("打开录像目录: %1").arg(recordDir));
 }
 
 void MainWindow::onClearOldRecordings() {
@@ -1616,7 +1617,7 @@ void MainWindow::onClearOldRecordings() {
         }
     }
     
-    log(QString::fromUtf8("录像"), QString::fromUtf8("已清理 %1 个旧录像文件").arg(deletedCount));
+    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("录像"), QString::fromUtf8("已清理 %1 个旧录像文件").arg(deletedCount));
     QMessageBox::information(this, QString::fromUtf8("清理完成"), 
         QString::fromUtf8("已清理 %1 个旧录像文件").arg(deletedCount));
 }
@@ -1642,7 +1643,7 @@ void MainWindow::onBatchInferenceToggled(bool checked) {
     if (checked) {
         if (Config::BATCH_SIZE <= 1) {
             ui->batchInferenceCheck->setChecked(false);
-            log(QString::fromUtf8("配置"), QString::fromUtf8("当前BATCH_SIZE=1, 无法启用批量推理"));
+            GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("当前BATCH_SIZE=1, 无法启用批量推理"));
             return;
         }
         // 设置所有活跃worker
@@ -1650,52 +1651,14 @@ void MainWindow::onBatchInferenceToggled(bool checked) {
             if (cw.worker) cw.worker->setBatchInference(true);
         }
         statusMessageLabel_->setText(QString::fromUtf8("批量推理已启用 (batch=%1)").arg(Config::BATCH_SIZE));
-        log(QString::fromUtf8("配置"), QString::fromUtf8("批量推理已启用 (batch=%1)").arg(Config::BATCH_SIZE));
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("批量推理已启用 (batch=%1)").arg(Config::BATCH_SIZE));
     } else {
         for (auto& cw : cameraWorkers_) {
             if (cw.worker) cw.worker->setBatchInference(false);
         }
         statusMessageLabel_->setText(QString::fromUtf8("批量推理已禁用, 使用单帧推理"));
-        log(QString::fromUtf8("配置"), QString::fromUtf8("批量推理已禁用"));
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("批量推理已禁用"));
     }
-}
-
-// ============================================================
-// 日志输出
-// ============================================================
-QString MainWindow::currentTimestamp() {
-    return QDateTime::currentDateTime().toString("hh:mm:ss");
-}
-
-void MainWindow::log(const QString& category, const QString& message) {
-    QString timestamp = currentTimestamp();
-    
-    // 根据不同类别设置颜色
-    QString color;
-    if (category == QString::fromUtf8("告警") || category == QString::fromUtf8("错误")) {
-        color = "#e74c3c";  // 红色 - 告警/错误
-    } else if (category == QString::fromUtf8("检测")) {
-        color = "#27ae60";  // 绿色 - 检测
-    } else if (category == QString::fromUtf8("录像")) {
-        color = "#e67e22";  // 橙色 - 录像
-    } else if (category == QString::fromUtf8("WebSocket") || category == QString::fromUtf8("MJPEG")) {
-        color = "#3498db";  // 蓝色 - 网络相关
-    } else if (category == QString::fromUtf8("配置")) {
-        color = "#9b59b6";  // 紫色 - 配置
-    } else if (category == QString::fromUtf8("系统")) {
-        color = "#34495e";  // 深灰 - 系统
-    } else {
-        color = "#7f8c8d";  // 灰色 - 其他
-    }
-    
-    QString formatted = QString("<span style='color:%1; font-size:22px;'>[%2][%3] %4</span>")
-        .arg(color, timestamp, category, message);
-    
-    ui->logTextEdit->append(formatted);
-    // 自动滚动到底部
-    //QTextCursor cursor = ui->logTextEdit->textCursor();
-    //cursor.movePosition(QTextCursor::End);
-    //ui->logTextEdit->setTextCursor(cursor);
 }
 
 // ============================================================
@@ -1706,14 +1669,14 @@ void MainWindow::loadRuntimeConfig() {
     QString cfgPath = QDir::currentPath() + "/config.json";
     if (QFile::exists(cfgPath)) {
         if (cfg.loadFromFile(cfgPath)) {
-            log(QString::fromUtf8("配置"), QString::fromUtf8("已加载运行时配置: %1").arg(cfgPath));
+            GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("已加载运行时配置: %1").arg(cfgPath));
         } else {
-            log(QString::fromUtf8("配置"), QString::fromUtf8("配置文件解析失败, 使用默认值"));
+            GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("配置文件解析失败, 使用默认值"));
         }
     } else {
         // 首次运行, 生成默认配置文件
         cfg.saveToFile(cfgPath);
-        log(QString::fromUtf8("配置"), QString::fromUtf8("已生成默认配置: %1").arg(cfgPath));
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("已生成默认配置: %1").arg(cfgPath));
     }
 
     // 用运行时配置覆盖UI初始值
@@ -1731,7 +1694,7 @@ void MainWindow::saveRuntimeConfig() {
     cfg.setModelPath(ui->modelPathEdit->text());
     QString cfgPath = QDir::currentPath() + "/config.json";
     cfg.saveToFile(cfgPath);
-    log(QString::fromUtf8("配置"), QString::fromUtf8("配置已保存: %1").arg(cfgPath));
+    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("配置已保存: %1").arg(cfgPath));
 }
 
 void MainWindow::onSettings() {
@@ -1820,7 +1783,7 @@ void MainWindow::onSettings() {
         // 保存到JSON
         saveRuntimeConfig();
 
-        log(QString::fromUtf8("配置"), QString::fromUtf8("运行时设置已更新(端口变更需重启生效)"));
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("运行时设置已更新(端口变更需重启生效)"));
     }
 
     delete dlg;

@@ -222,12 +222,14 @@
     浣跨敤 CMake 鏋勫缓鍒?AUTOMOC 浼氳嚜鍔ㄥ鐞? 鏃犻渶浠讳綍鎵╁睍.
   -->
   <ItemGroup>
+    <ClCompile Include="gui_logger.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mainwindow.cpp" />
     <ClCompile Include="moc_mainwindow.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="config.hpp" />
+    <ClInclude Include="gui_logger.hpp" />
     <ClInclude Include="inference_runner.hpp" />
     <ClInclude Include="logger.hpp" />
     <ClInclude Include="mainwindow.hpp" />
