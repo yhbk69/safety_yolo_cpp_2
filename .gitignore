@@ -1,0 +1,38 @@
+# Build output
+build/
+dist/
+x64/
+Release/
+Debug/
+
+# Qt generated files
+GeneratedFiles/
+
+# Model files (体积大且可从别处获取)
+*.engine
+*.onnx
+*.pt
+*.pth
+*.weights
+*.trt
+
+# Output directory
+output/
+
+# IDE
+.vs/
+.vscode/
+*.user # VS 用户设置（路径等私人信息）
+*.suo # VS 解决方案用户选项
+
+# 保留项目文件（必须提交！）
+!*.sln
+!*.vcxproj
+!*.vcxproj.filters
+!*.vcxproj.user
+!*.slnx
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
