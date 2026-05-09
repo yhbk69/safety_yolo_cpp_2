@@ -89,20 +89,10 @@ MainWindow::~MainWindow() {
         // 视频模式清理
         isProcessing_ = false;
     }
-    for (auto it = pendingAlarms_.begin(); it != pendingAlarms_.end(); ++it) {
-        if (it->retryTimer) {
-            it->retryTimer->stop();
-            delete it->retryTimer;
-        }
-    }
-    pendingAlarms_.clear();
+    // pendingAlarms_ 清理已由 wsManager_->stop() 处理
     // HttpFileServer 由 unique_ptr 自动管理
     httpFileServer_.reset();
-    for (auto* client : wsClients_) {
-        client->close();
-    }
-    wsClients_.clear();
-    if (wsServer_) wsServer_->close();
+    // WebSocket 管理器由 unique_ptr 自动管理
     // MJPEG 推流服务由 unique_ptr 自动管理
     delete ui;
 }
@@ -141,303 +131,26 @@ void MainWindow::setupConnections() {
 
 // ============================================================
 // WebSocket 服务器
-// ============================================================
-void MainWindow::startWebSocketServer() {
-    wsServer_ = new QWebSocketServer("YOLO11-Alert", QWebSocketServer::NonSecureMode, this);
-    if (!wsServer_->listen(QHostAddress::Any, Config::WEBSOCKET_PORT)) {
-        wsAddressLabel_->setText("WebSocket: 启动失败");
-        GuiLogger::log(ui->logTextEdit, "WebSocket", QString("启动失败, 端口: %1").arg(Config::WEBSOCKET_PORT));
-        return;
-    }
 
-    connect(wsServer_, &QWebSocketServer::newConnection, this, &MainWindow::onWsClientConnected);
 
-    QString wsAddr = QString("ws://%1:%2")
-    //    .arg(getHostIp())
-        .arg(QString::fromStdString(Config::HOST_IP))
-        .arg(Config::WEBSOCKET_PORT);
-    wsAddressLabel_->setText("WebSocket: " + wsAddr);
-    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("服务已启动 %1").arg(wsAddr));
 
-    // 启动 HTTP 文件服务器
-    startHttpFileServer();
-}
 
-// ============================================================
-// HTTP 文件服务器: 使用 HttpFileServer 类
-// ============================================================
-void MainWindow::startHttpFileServer() {
-    httpFileServer_ = std::make_unique<HttpFileServer>();
-    httpFileServer_->setLogCallback([this](const QString& category, const QString& message) {
-        GuiLogger::log(ui->logTextEdit, category, message);
-    });
-    httpFileServer_->init();
-
-    if (!httpFileServer_->isRunning()) {
-        statusMessageLabel_->setText("HTTP 文件服务启动失败");
-        return;
-    }
-
-    statusMessageLabel_->setText(
-        QString("HTTP 文件服务已启动: http://%1:%2")
-            .arg(QString::fromStdString(Config::HOST_IP))
-            .arg(Config::HTTP_PORT));
-}
-
-void MainWindow::onWsClientConnected() {
-    auto* socket = wsServer_->nextPendingConnection();
-    if (!socket) return;
-    wsClients_.append(socket);
-
-    connect(socket, &QWebSocket::textMessageReceived, this, &MainWindow::onWsTextMessage);
-    connect(socket, &QWebSocket::disconnected, this, [this, socket]() {
-        GuiLogger::log(ui->logTextEdit, "WebSocket", QString("客户端断开连接, 剩余: %1").arg(wsClients_.size() - 1));
-        wsClients_.removeAll(socket);
-        socket->deleteLater();
-    });
-    statusMessageLabel_->setText(
-        QString("WebSocket 客户端已连接 (%1)").arg(wsClients_.size()));
-    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("客户端已连接, 当前连接数: %1").arg(wsClients_.size()));
-}
-
-void MainWindow::onWsTextMessage(const QString& message) {
-    QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8());
-    if (doc.isNull()) return;
-
-    QJsonObject obj = doc.object();
-    QString type = obj["type"].toString();
-
-    // 处理 ping 心跳
-    if (type == "ping") {
-        QJsonObject pong;
-        pong["type"] = "pong";
-        QJsonDocument pongDoc(pong);
-
-        // 获取发送消息的客户端
-        auto* client = qobject_cast<QWebSocket*>(sender());
-        if (client) {
-            client->sendTextMessage(pongDoc.toJson(QJsonDocument::Compact));
-        }
-        GuiLogger::log(ui->logTextEdit, "WebSocket", "收到 ping, 回复 pong");
-        return;
-    }
-
-    // 处理 sync_request 同步请求
-    if (type == "sync_request") {
-        QString lastAlarmId = obj["last_alarm_id"].toString();
-        handleSyncRequest(lastAlarmId);
-        return;
-    }
-
-    // 处理 get_streams 获取摄像头列表
-    if (type == "get_streams") {
-        handleGetStreams();
-        return;
-    }
-
-    // 处理 set_fence 围栏设置
-    if (type == "set_fence") {
-        QString streamId = obj["stream_id"].toString();
-        QJsonObject fence = obj["fence"].toObject();
-        handleSetFence(streamId, fence);
-        return;
-    }
-
-    // 处理 view_stream 查看实时视频
-    if (type == "view_stream") {
-        QString streamId = obj["stream_id"].toString();
-        handleViewStream(streamId);
-        return;
-    }
-
-    // 处理 ack 告警确认
-    if (type != "ack") return;
-
-    QString alarmId = obj["alarm_id"].toString();
-    if (alarmId.isEmpty()) return;
-
-    // 找到对应的待确认告警, 停止定时器
-    auto it = pendingAlarms_.find(alarmId);
-    if (it != pendingAlarms_.end()) {
-        if (it->retryTimer) {
-            it->retryTimer->stop();
-            delete it->retryTimer;
-        }
-        pendingAlarms_.erase(it);
-        statusMessageLabel_->setText(
-            QString("告警 %1 已确认").arg(alarmId.left(8)));
-        GuiLogger::log(ui->logTextEdit, "WebSocket", QString("收到告警确认: %1").arg(alarmId.left(8)));
-    }
-}
-
-void MainWindow::retryAlarm(const QString& alarmId) {
-    auto it = pendingAlarms_.find(alarmId);
-    if (it == pendingAlarms_.end()) return;
-
-    // 超过最大重试次数, 停止重试并清理
-    if (++it->retryCount >= MAX_RETRY_COUNT) {
-        if (it->retryTimer) {
-            it->retryTimer->stop();
-            delete it->retryTimer;
-        }
-        pendingAlarms_.erase(it);
-        GuiLogger::log(ui->logTextEdit, "告警", QString("告警 %1 重试超限, 已放弃").arg(alarmId.left(8)));
-        return;
-    }
-
-    // 重发给所有连接的客户端
-    for (auto* client : wsClients_) {
-        client->sendTextMessage(it->jsonMessage);
-    }
-    statusMessageLabel_->setText(
-        QString("重发告警 %1 (%2/%3)").arg(alarmId.left(8)).arg(it->retryCount).arg(MAX_RETRY_COUNT));
-    GuiLogger::log(ui->logTextEdit, "告警", QString("重发告警: %1 (%2/%3)").arg(alarmId.left(8)).arg(it->retryCount).arg(MAX_RETRY_COUNT));
-}
 
 // ============================================================
 // WebSocket 消息处理 - 同步请求
 // ============================================================
-void MainWindow::handleSyncRequest(const QString& lastAlarmId) {
-    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("收到同步请求, last_alarm_id: %1").arg(lastAlarmId));
-
-    // 找出 last_alarm_id 之后且未确认的告警，逐条推送
-    bool foundLast = lastAlarmId.isEmpty();  // 如果为空，推送所有
-
-    // 遍历所有待确认的告警
-    for (auto it = pendingAlarms_.begin(); it != pendingAlarms_.end(); ++it) {
-        const QString& alarmId = it.key();
-
-        // 如果找到了 last_alarm_id，从这里之后开始推送
-        if (!foundLast && alarmId == lastAlarmId) {
-            foundLast = true;
-            continue;  // 跳过 last_alarm_id 本身
-        }
-
-        // 推送 last_alarm_id 之后的告警
-        if (foundLast) {
-            for (auto* client : wsClients_) {
-                client->sendTextMessage(it->jsonMessage);
-            }
-            GuiLogger::log(ui->logTextEdit, "WebSocket", QString("同步推送告警: %1").arg(alarmId.left(8)));
-        }
-    }
-
-    if (lastAlarmId.isEmpty()) {
-        GuiLogger::log(ui->logTextEdit, "WebSocket", "同步完成: 推送所有待确认告警");
-    } else {
-        GuiLogger::log(ui->logTextEdit, "WebSocket", QString("同步完成: last_alarm_id=%1").arg(lastAlarmId.left(8)));
-    }
-}
 
 // ============================================================
 // WebSocket 消息处理 - 获取摄像头列表
 // ============================================================
-void MainWindow::handleGetStreams() {
-    QJsonArray streamsArray;
-
-    // 遍历所有活跃的摄像头worker
-    for (auto it = cameraWorkers_.begin(); it != cameraWorkers_.end(); ++it) {
-        int camId = it.key();
-        const auto& worker = it.value();
-
-        QJsonObject stream;
-        stream["stream_id"] = QString::number(camId);
-        stream["name"] = worker.worker ? worker.worker->cameraName() : QString("摄像头%1").arg(camId);
-        // URL 使用MJPEG流地址
-        stream["url"] = QString("http://%1:%2/stream")
-            .arg(QString::fromStdString(Config::HOST_IP))
-            .arg(RuntimeConfig::instance().streamPort());
-
-        streamsArray.append(stream);
-    }
-
-    QJsonObject response;
-    response["type"] = "streams_list";
-    response["data"] = streamsArray;
-
-    QJsonDocument doc(response);
-    QString jsonStr = doc.toJson(QJsonDocument::Compact);
-
-    // 发送给请求的客户端
-    auto* client = qobject_cast<QWebSocket*>(sender());
-    if (client) {
-        client->sendTextMessage(jsonStr);
-    }
-
-    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("响应摄像头列表: %1 个流").arg(streamsArray.size()));
-}
 
 // ============================================================
 // WebSocket 消息处理 - 设置围栏
 // ============================================================
-void MainWindow::handleSetFence(const QString& streamId, const QJsonObject& fence) {
-    float x1 = fence["x1"].toDouble(0.0);
-    float y1 = fence["y1"].toDouble(0.0);
-    float x2 = fence["x2"].toDouble(1.0);
-    float y2 = fence["y2"].toDouble(1.0);
-
-    FenceRegion region;
-    region.x1 = x1;
-    region.y1 = y1;
-    region.x2 = x2;
-    region.y2 = y2;
-
-    fenceRegions_[streamId] = region;
-
-    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("设置围栏: stream_id=%1, 区域=(%.2f,%.2f,%.2f,%.2f)")
-        .arg(streamId).arg(x1).arg(y1).arg(x2).arg(y2));
-
-    // 响应确认
-    QJsonObject response;
-    response["type"] = "fence_set";
-    response["stream_id"] = streamId;
-    response["status"] = "success";
-
-    QJsonDocument doc(response);
-    auto* client = qobject_cast<QWebSocket*>(sender());
-    if (client) {
-        client->sendTextMessage(doc.toJson(QJsonDocument::Compact));
-    }
-}
 
 // ============================================================
 // WebSocket 消息处理 - 查看实时视频流
 // ============================================================
-void MainWindow::handleViewStream(const QString& streamId) {
-    // 检查摄像头是否存在
-    int camId = streamId.toInt();
-    auto it = cameraWorkers_.find(camId);
-    if (it == cameraWorkers_.end()) {
-        QJsonObject error;
-        error["type"] = "stream_error";
-        error["stream_id"] = streamId;
-        error["message"] = "摄像头不存在";
-        
-        auto* client = qobject_cast<QWebSocket*>(sender());
-        if (client) {
-            client->sendTextMessage(QJsonDocument(error).toJson(QJsonDocument::Compact));
-        }
-        return;
-    }
-
-    // 返回MJPEG流URL
-    QString streamUrl = QString("http://%1:%2/stream")
-        .arg(QString::fromStdString(Config::HOST_IP))
-        .arg(RuntimeConfig::instance().streamPort());
-
-    QJsonObject response;
-    response["type"] = "stream_url";
-    response["stream_id"] = streamId;
-    response["url"] = streamUrl;
-    response["message"] = "请在浏览器中打开此URL查看实时视频";
-
-    auto* client = qobject_cast<QWebSocket*>(sender());
-    if (client) {
-        client->sendTextMessage(QJsonDocument(response).toJson(QJsonDocument::Compact));
-    }
-
-    GuiLogger::log(ui->logTextEdit, "WebSocket", QString("请求查看摄像头%1的实时视频").arg(streamId));
-}
 
 // ============================================================
 // 告警处理
@@ -449,25 +162,10 @@ void MainWindow::onAlertSaved(int cameraId, const QString& videoPath, const QStr
     QString alarmId = doc.object()["data"].toObject()["alarm_id"].toString();
     if (alarmId.isEmpty()) return;
 
-    // 广播给所有 WebSocket 客户端
-    for (auto* client : wsClients_) {
-        client->sendTextMessage(alertJson);
-    }
+    // 使用 WebSocketManager 推送告警(含 ACK 重试)
+    wsManager_->pushAlarm(alarmId, alertJson);
 
-    // 启动 ACK 等待定时器(有最大重试次数)
-    auto* timer = new QTimer(this);
-    timer->setSingleShot(false);
-    connect(timer, &QTimer::timeout, this, [this, alarmId]() {
-        retryAlarm(alarmId);
-    });
-
-    PendingAlarm pending;
-    pending.jsonMessage = alertJson;
-    pending.retryTimer = timer;
-    pending.retryCount = 0;
-    pendingAlarms_[alarmId] = pending;
-
-    timer->start(Config::ACK_TIMEOUT_MS);
+    // 告警重试已由 wsManager_ 内部管理
 
     // 状态栏
     QString alarmType = doc.object()["data"].toObject()["alarm_type"].toString();

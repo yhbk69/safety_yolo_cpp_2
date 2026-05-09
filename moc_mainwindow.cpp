@@ -22,8 +22,8 @@ QT_BEGIN_MOC_NAMESPACE
 QT_WARNING_PUSH
 QT_WARNING_DISABLE_DEPRECATED
 struct qt_meta_stringdata_MainWindow_t {
-    QByteArrayData data[46];
-    char stringdata0[618];
+    QByteArrayData data[35];
+    char stringdata0[469];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -63,21 +63,10 @@ QT_MOC_LITERAL(27, 355, 12), // "onAlertSaved"
 QT_MOC_LITERAL(28, 368, 9), // "videoPath"
 QT_MOC_LITERAL(29, 378, 9), // "imagePath"
 QT_MOC_LITERAL(30, 388, 9), // "alertJson"
-QT_MOC_LITERAL(31, 398, 19), // "onWsClientConnected"
-QT_MOC_LITERAL(32, 418, 15), // "onWsTextMessage"
-QT_MOC_LITERAL(33, 434, 10), // "retryAlarm"
-QT_MOC_LITERAL(34, 445, 7), // "alarmId"
-QT_MOC_LITERAL(35, 453, 17), // "handleSyncRequest"
-QT_MOC_LITERAL(36, 471, 11), // "lastAlarmId"
-QT_MOC_LITERAL(37, 483, 16), // "handleGetStreams"
-QT_MOC_LITERAL(38, 500, 14), // "handleSetFence"
-QT_MOC_LITERAL(39, 515, 8), // "streamId"
-QT_MOC_LITERAL(40, 524, 5), // "fence"
-QT_MOC_LITERAL(41, 530, 16), // "handleViewStream"
-QT_MOC_LITERAL(42, 547, 16), // "onStartRecording"
-QT_MOC_LITERAL(43, 564, 15), // "onStopRecording"
-QT_MOC_LITERAL(44, 580, 16), // "onViewRecordings"
-QT_MOC_LITERAL(45, 597, 20) // "onClearOldRecordings"
+QT_MOC_LITERAL(31, 398, 16), // "onStartRecording"
+QT_MOC_LITERAL(32, 415, 15), // "onStopRecording"
+QT_MOC_LITERAL(33, 431, 16), // "onViewRecordings"
+QT_MOC_LITERAL(34, 448, 20) // "onClearOldRecordings"
 
     },
     "MainWindow\0onOpenImage\0\0onOpenVideo\0"
@@ -91,13 +80,8 @@ QT_MOC_LITERAL(45, 597, 20) // "onClearOldRecordings"
     "detections\0elapsedMs\0onWorkerFinished\0"
     "onWorkerError\0message\0onAlertSaved\0"
     "videoPath\0imagePath\0alertJson\0"
-    "onWsClientConnected\0onWsTextMessage\0"
-    "retryAlarm\0alarmId\0handleSyncRequest\0"
-    "lastAlarmId\0handleGetStreams\0"
-    "handleSetFence\0streamId\0fence\0"
-    "handleViewStream\0onStartRecording\0"
-    "onStopRecording\0onViewRecordings\0"
-    "onClearOldRecordings"
+    "onStartRecording\0onStopRecording\0"
+    "onViewRecordings\0onClearOldRecordings"
 };
 #undef QT_MOC_LITERAL
 
@@ -107,7 +91,7 @@ static const uint qt_meta_data_MainWindow[] = {
        8,       // revision
        0,       // classname
        0,    0, // classinfo
-      29,   14, // methods
+      22,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
@@ -115,35 +99,28 @@ static const uint qt_meta_data_MainWindow[] = {
        0,       // signalCount
 
  // slots: name, argc, parameters, tag, flags
-       1,    0,  159,    2, 0x08 /* Private */,
-       3,    0,  160,    2, 0x08 /* Private */,
-       4,    1,  161,    2, 0x08 /* Private */,
-       6,    0,  164,    2, 0x08 /* Private */,
-       7,    1,  165,    2, 0x08 /* Private */,
-       9,    0,  168,    2, 0x08 /* Private */,
-      10,    0,  169,    2, 0x08 /* Private */,
-      11,    0,  170,    2, 0x08 /* Private */,
-      12,    0,  171,    2, 0x08 /* Private */,
-      13,    0,  172,    2, 0x08 /* Private */,
-      14,    1,  173,    2, 0x08 /* Private */,
-      16,    1,  176,    2, 0x08 /* Private */,
-      17,    1,  179,    2, 0x08 /* Private */,
-      18,    0,  182,    2, 0x08 /* Private */,
-      19,    4,  183,    2, 0x08 /* Private */,
-      24,    1,  192,    2, 0x08 /* Private */,
-      25,    2,  195,    2, 0x08 /* Private */,
-      27,    4,  200,    2, 0x08 /* Private */,
-      31,    0,  209,    2, 0x08 /* Private */,
-      32,    1,  210,    2, 0x08 /* Private */,
-      33,    1,  213,    2, 0x08 /* Private */,
-      35,    1,  216,    2, 0x08 /* Private */,
-      37,    0,  219,    2, 0x08 /* Private */,
-      38,    2,  220,    2, 0x08 /* Private */,
-      41,    1,  225,    2, 0x08 /* Private */,
-      42,    0,  228,    2, 0x08 /* Private */,
-      43,    0,  229,    2, 0x08 /* Private */,
-      44,    0,  230,    2, 0x08 /* Private */,
-      45,    0,  231,    2, 0x08 /* Private */,
+       1,    0,  124,    2, 0x08 /* Private */,
+       3,    0,  125,    2, 0x08 /* Private */,
+       4,    1,  126,    2, 0x08 /* Private */,
+       6,    0,  129,    2, 0x08 /* Private */,
+       7,    1,  130,    2, 0x08 /* Private */,
+       9,    0,  133,    2, 0x08 /* Private */,
+      10,    0,  134,    2, 0x08 /* Private */,
+      11,    0,  135,    2, 0x08 /* Private */,
+      12,    0,  136,    2, 0x08 /* Private */,
+      13,    0,  137,    2, 0x08 /* Private */,
+      14,    1,  138,    2, 0x08 /* Private */,
+      16,    1,  141,    2, 0x08 /* Private */,
+      17,    1,  144,    2, 0x08 /* Private */,
+      18,    0,  147,    2, 0x08 /* Private */,
+      19,    4,  148,    2, 0x08 /* Private */,
+      24,    1,  157,    2, 0x08 /* Private */,
+      25,    2,  160,    2, 0x08 /* Private */,
+      27,    4,  165,    2, 0x08 /* Private */,
+      31,    0,  174,    2, 0x08 /* Private */,
+      32,    0,  175,    2, 0x08 /* Private */,
+      33,    0,  176,    2, 0x08 /* Private */,
+      34,    0,  177,    2, 0x08 /* Private */,
 
  // slots: parameters
     QMetaType::Void,
@@ -164,13 +141,6 @@ static const uint qt_meta_data_MainWindow[] = {
     QMetaType::Void, QMetaType::Int,    8,
     QMetaType::Void, QMetaType::Int, QMetaType::QString,    8,   26,
     QMetaType::Void, QMetaType::Int, QMetaType::QString, QMetaType::QString, QMetaType::QString,    8,   28,   29,   30,
-    QMetaType::Void,
-    QMetaType::Void, QMetaType::QString,   26,
-    QMetaType::Void, QMetaType::QString,   34,
-    QMetaType::Void, QMetaType::QString,   36,
-    QMetaType::Void,
-    QMetaType::Void, QMetaType::QString, QMetaType::QJsonObject,   39,   40,
-    QMetaType::Void, QMetaType::QString,   39,
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void,
@@ -203,17 +173,10 @@ void MainWindow::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
         case 15: _t->onWorkerFinished((*reinterpret_cast< int(*)>(_a[1]))); break;
         case 16: _t->onWorkerError((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2]))); break;
         case 17: _t->onAlertSaved((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2])),(*reinterpret_cast< const QString(*)>(_a[3])),(*reinterpret_cast< const QString(*)>(_a[4]))); break;
-        case 18: _t->onWsClientConnected(); break;
-        case 19: _t->onWsTextMessage((*reinterpret_cast< const QString(*)>(_a[1]))); break;
-        case 20: _t->retryAlarm((*reinterpret_cast< const QString(*)>(_a[1]))); break;
-        case 21: _t->handleSyncRequest((*reinterpret_cast< const QString(*)>(_a[1]))); break;
-        case 22: _t->handleGetStreams(); break;
-        case 23: _t->handleSetFence((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< const QJsonObject(*)>(_a[2]))); break;
-        case 24: _t->handleViewStream((*reinterpret_cast< const QString(*)>(_a[1]))); break;
-        case 25: _t->onStartRecording(); break;
-        case 26: _t->onStopRecording(); break;
-        case 27: _t->onViewRecordings(); break;
-        case 28: _t->onClearOldRecordings(); break;
+        case 18: _t->onStartRecording(); break;
+        case 19: _t->onStopRecording(); break;
+        case 20: _t->onViewRecordings(); break;
+        case 21: _t->onClearOldRecordings(); break;
         default: ;
         }
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
@@ -259,13 +222,13 @@ int MainWindow::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 29)
+        if (_id < 22)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 29;
+        _id -= 22;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 29)
+        if (_id < 22)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 29;
+        _id -= 22;
     }
     return _id;
 }

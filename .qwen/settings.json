@@ -10,7 +10,8 @@
       "Bash(cmake *)",
       "Bash(mkdir *)",
       "Bash(rmdir *)",
-      "Bash(dir *)"
+      "Bash(dir *)",
+      "Bash(\"c:\\qt\\5.15.2\\msvc2019_64\\bin\\moc.exe\" *)"
     ]
   },
   "$version": 3
