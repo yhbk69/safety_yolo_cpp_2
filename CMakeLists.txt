@@ -54,6 +54,8 @@ set(SOURCES
     main.cpp
     mainwindow.cpp
     gui_logger.cpp
+    inference_worker.cpp
+    http_file_server.cpp
     mainwindow.ui        # Qt UI 布局文件(由 Qt Creator 可视化编辑)
 )
 
@@ -67,6 +69,8 @@ set(HEADERS
     postprocessor.hpp
     yolo_trt_engine.hpp
     inference_runner.hpp
+    inference_worker.hpp
+    http_file_server.hpp
 )
 
 # ============ 生成可执行文件 ============

@@ -157,7 +157,8 @@
     <PreBuildEvent>
       <Command>if not exist "$(ProjectDir)GeneratedFiles" mkdir "$(ProjectDir)GeneratedFiles"
 "$(QTDIR)\bin\uic.exe" "$(ProjectDir)mainwindow.ui" -o "$(ProjectDir)GeneratedFiles\ui_mainwindow.h"
-"$(QTDIR)\bin\moc.exe" "$(ProjectDir)mainwindow.hpp" -o "$(ProjectDir)moc_mainwindow.cpp" -I"$(ProjectDir)" -I"$(QTDIR)\include" -I"$(QTDIR)\include\QtWidgets" -I"$(QTDIR)\include\QtCore" -I"$(QTDIR)\include\QtGui" -I"$(QTDIR)\include\QtWebSockets" -I"$(QTDIR)\include\QtNetwork"</Command>
+"$(QTDIR)\bin\moc.exe" "$(ProjectDir)mainwindow.hpp" -o "$(ProjectDir)moc_mainwindow.cpp" -I"$(ProjectDir)" -I"$(QTDIR)\include" -I"$(QTDIR)\include\QtWidgets" -I"$(QTDIR)\include\QtCore" -I"$(QTDIR)\include\QtGui" -I"$(QTDIR)\include\QtWebSockets" -I"$(QTDIR)\include\QtNetwork"
+"$(QTDIR)\bin\moc.exe" "$(ProjectDir)inference_worker.hpp" -o "$(ProjectDir)moc_inference_worker.cpp" -I"$(ProjectDir)" -I"$(QTDIR)\include" -I"$(QTDIR)\include\QtWidgets" -I"$(QTDIR)\include\QtCore" -I"$(QTDIR)\include\QtGui" -I"$(QTDIR)\include\QtWebSockets" -I"$(QTDIR)\include\QtNetwork"</Command>
       <Message>Running UIC + MOC...</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
@@ -212,7 +213,8 @@
     <PreBuildEvent>
       <Command>if not exist "$(ProjectDir)GeneratedFiles" mkdir "$(ProjectDir)GeneratedFiles"
 "$(QTDIR)\bin\uic.exe" "$(ProjectDir)mainwindow.ui" -o "$(ProjectDir)GeneratedFiles\ui_mainwindow.h"
-"$(QTDIR)\bin\moc.exe" "$(ProjectDir)mainwindow.hpp" -o "$(ProjectDir)moc_mainwindow.cpp" -I"$(ProjectDir)" -I"$(QTDIR)\include" -I"$(QTDIR)\include\QtWidgets" -I"$(QTDIR)\include\QtCore" -I"$(QTDIR)\include\QtGui" -I"$(QTDIR)\include\QtWebSockets" -I"$(QTDIR)\include\QtNetwork"</Command>
+"$(QTDIR)\bin\moc.exe" "$(ProjectDir)mainwindow.hpp" -o "$(ProjectDir)moc_mainwindow.cpp" -I"$(ProjectDir)" -I"$(QTDIR)\include" -I"$(QTDIR)\include\QtWidgets" -I"$(QTDIR)\include\QtCore" -I"$(QTDIR)\include\QtGui" -I"$(QTDIR)\include\QtWebSockets" -I"$(QTDIR)\include\QtNetwork"
+"$(QTDIR)\bin\moc.exe" "$(ProjectDir)inference_worker.hpp" -o "$(ProjectDir)moc_inference_worker.cpp" -I"$(ProjectDir)" -I"$(QTDIR)\include" -I"$(QTDIR)\include\QtWidgets" -I"$(QTDIR)\include\QtCore" -I"$(QTDIR)\include\QtGui" -I"$(QTDIR)\include\QtWebSockets" -I"$(QTDIR)\include\QtNetwork"</Command>
       <Message>Running UIC + MOC...</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
@@ -223,15 +225,20 @@
   -->
   <ItemGroup>
     <ClCompile Include="gui_logger.cpp" />
+    <ClCompile Include="inference_worker.cpp" />
+    <ClCompile Include="http_file_server.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mainwindow.cpp" />
     <ClCompile Include="mjpeg_streamer.cpp" />
     <ClCompile Include="moc_mainwindow.cpp" />
+    <ClCompile Include="moc_inference_worker.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="config.hpp" />
     <ClInclude Include="gui_logger.hpp" />
+    <ClInclude Include="http_file_server.hpp" />
     <ClInclude Include="inference_runner.hpp" />
+    <ClInclude Include="inference_worker.hpp" />
     <ClInclude Include="logger.hpp" />
     <ClInclude Include="mainwindow.hpp" />
     <ClInclude Include="mjpeg_streamer.hpp" />

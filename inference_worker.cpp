@@ -4,7 +4,6 @@
  */
 
 #include "inference_worker.hpp"
-#include "mainwindow.hpp"
 
 #include <QDir>
 #include <QUuid>
@@ -12,6 +11,7 @@
 #include <QJsonDocument>
 #include <QDateTime>
 #include <QBuffer>
+#include <QThread>
 
 InferenceWorker::InferenceWorker(YoloTrtEngine* engine, int cameraId,
                                      const QString& cameraName,
@@ -242,7 +242,7 @@ void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alar
     cv::imwrite(imagePath.toStdString(), toBgr(alertBuffer_.front()));
 
     // 构造告警 JSON
-    QString hostIp = MainWindow::getHostIp();
+    QString hostIp = QString::fromStdString(Config::HOST_IP);
     QJsonObject data;
     data["alarm_id"]   = alarmId;
     data["alarm_type"] = alarmType;
