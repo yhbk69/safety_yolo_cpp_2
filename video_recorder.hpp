@@ -17,11 +17,11 @@
 
 #include <QString>
 #include <QDateTime>
-#include <QMap>
 #include <QMutex>
 #include <opencv2/opencv.hpp>
 #include <functional>
 #include <memory>
+#include <map>
 
 // 录制会话(每个摄像头一个)
 struct RecordingSession {
@@ -133,7 +133,7 @@ private:
     QString getCameraDirPath(int cameraId) const;
 
     mutable QMutex mutex_;
-    QMap<int, std::unique_ptr<RecordingSession>> sessions_;
+    std::map<int, std::unique_ptr<RecordingSession>> sessions_;
     Callbacks callbacks_;
 };
 

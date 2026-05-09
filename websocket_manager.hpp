@@ -53,7 +53,7 @@ struct StreamInfo {
 
 class WebSocketManager {
 public:
-    static constexpr int MAX_RETRY_COUNT = 3;  // 最大重试次数
+    static constexpr int MAX_RETRY_COUNT = 10;  // 最大重试次数
 
     WebSocketManager();
     ~WebSocketManager();

@@ -231,6 +231,7 @@
     <ClCompile Include="mainwindow.cpp" />
     <ClCompile Include="mjpeg_streamer.cpp" />
     <ClCompile Include="moc_mainwindow.cpp" />
+    <ClCompile Include="video_recorder.cpp" />
     <ClCompile Include="websocket_manager.cpp" />
     <ClCompile Include="moc_inference_worker.cpp" />
   </ItemGroup>
@@ -247,6 +248,7 @@
     <ClInclude Include="preprocessor.hpp" />
     <ClInclude Include="runtime_config.hpp" />
     <ClInclude Include="types.hpp" />
+    <ClInclude Include="video_recorder.hpp" />
     <ClInclude Include="yolo_trt_engine.hpp" />
     <ClInclude Include="websocket_manager.hpp" />
   </ItemGroup>

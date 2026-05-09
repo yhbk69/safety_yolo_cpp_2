@@ -11,6 +11,7 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QDebug>
+#include <algorithm>
 
 VideoRecorder::VideoRecorder() {
 }
@@ -130,12 +131,11 @@ bool VideoRecorder::isRecording(int cameraId) const {
 
 void VideoRecorder::stopAll() {
     QMutexLocker locker(&mutex_);
-    for (auto& pair : sessions_) {
-        if (pair.second->isRecording) {
-            pair.second->writer.release();
-            pair.second->isRecording = false;
+    for (auto& [id, session] : sessions_) {
+        if (session->isRecording) {
+            session->writer.release();
+            session->isRecording = false;
         }
-        pair.second.reset();
     }
     sessions_.clear();
 }
@@ -143,9 +143,9 @@ void VideoRecorder::stopAll() {
 QList<int> VideoRecorder::recordingCameraIds() const {
     QMutexLocker locker(&mutex_);
     QList<int> ids;
-    for (const auto& pair : sessions_) {
-        if (pair.second->isRecording) {
-            ids.append(pair.first);
+    for (const auto& [id, session] : sessions_) {
+        if (session->isRecording) {
+            ids.append(id);
         }
     }
     return ids;
@@ -243,7 +243,7 @@ RecordingSession* VideoRecorder::getOrCreateSession(int cameraId) {
 
 void VideoRecorder::releaseSession(int cameraId) {
     // 调用者已持有 mutex_
-    sessions_.remove(cameraId);
+    sessions_.erase(cameraId);
 }
 
 QString VideoRecorder::getRecordDirPath() const {

@@ -37,6 +37,7 @@
 #include "http_file_server.hpp"
 #include "config.hpp"
 #include "runtime_config.hpp"
+#include "video_recorder.hpp"
 
 namespace Ui { class MainWindow; }
 
@@ -132,20 +133,10 @@ private:
         float x1, y1, x2, y2;
     };
 
-    // ====== 瑙嗛褰曞埗 ======
-    struct CameraRecording {
-        int cameraId = 0;
-        QString videoPath;        // 褰撳墠褰曞儚鏂囦欢璺緞
-        cv::VideoWriter* writer = nullptr;  // OpenCV褰曞儚 writer
-        bool isRecording = false;  // 鏀逛负鏅€歜ool
-        QDateTime startTime;   // 寮€濮嬫椂闂?
-    };
-    QMap<int, CameraRecording*> cameraRecordings_;  // 鐢ㄥ師濮嬫寚閽?
-    QString getRecordDir(int cameraId);  // 鑾峰彇褰曞儚鐩綍
-    void writeRecordingFrame(int cameraId, const cv::Mat& frame);  // 鍐欏抚鍒板綍鍍?
+    std::unique_ptr<VideoRecorder> videoRecorder_;
 
 private slots:
-    // 褰曞埗鐩稿叧
+    // 录制相关
     void onStartRecording();
     void onStopRecording();
     void onViewRecordings();

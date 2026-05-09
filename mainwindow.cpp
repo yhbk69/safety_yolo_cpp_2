@@ -105,6 +105,18 @@ MainWindow::MainWindow(QWidget *parent)
         .arg(QString::fromStdString(Config::HOST_IP))
         .arg(Config::WEBSOCKET_PORT));
 
+    // 初始化 VideoRecorder
+    videoRecorder_ = std::make_unique<VideoRecorder>();
+    videoRecorder_->setCallbacks({
+        .log = [this](const QString& cat, const QString& msg) {
+            GuiLogger::log(ui->logTextEdit, cat, msg);
+        },
+        .updateButtons = [this](bool isRecording) {
+            ui->startRecordBtn->setEnabled(!isRecording);
+            ui->stopRecordBtn->setEnabled(isRecording);
+        }
+    });
+
     if (fs::exists(Config::MODEL_PATH)) onLoadModel();
 
     ui->batchInferenceCheck->setChecked(Config::USE_BATCH_INFERENCE);
@@ -116,14 +128,9 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow() {
     stopAllCameras();
     if (isProcessing_) {
-        // 视频模式清理
         isProcessing_ = false;
     }
-    // pendingAlarms_ 清理已由 wsManager_->stop() 处理
-    // HttpFileServer 由 unique_ptr 自动管理
     httpFileServer_.reset();
-    // WebSocket 管理器由 unique_ptr 自动管理
-    // MJPEG 推流服务由 unique_ptr 自动管理
     delete ui;
 }
 
@@ -419,9 +426,8 @@ void MainWindow::onOpenCamera(bool checked) {
         });
     } else {
         // 停止录制（如果正在录制）
-        auto recIt = cameraRecordings_.find(0);
-        if (recIt != cameraRecordings_.end() && recIt.value()->isRecording) {
-            onStopRecording();
+        if (videoRecorder_->isRecording(0)) {
+            videoRecorder_->stopRecording(0);
         }
         stopCamera(0);
     }
@@ -488,8 +494,7 @@ void MainWindow::stopCamera(int cameraId) {
     GuiLogger::log(ui->logTextEdit, "系统", QString("正在停止摄像头 %1...").arg(cameraId));
 
     // 0. 如果该摄像头正在录制，先停止录制
-    auto recIt = cameraRecordings_.find(cameraId);
-    if (recIt != cameraRecordings_.end() && recIt.value()->isRecording) {
+    if (videoRecorder_->isRecording(cameraId)) {
         GuiLogger::log(ui->logTextEdit, "录像", QString("摄像头%1正在录制，自动停止录制").arg(cameraId));
         activeDisplayCamera_ = cameraId;
         onStopRecording();
@@ -598,22 +603,11 @@ void MainWindow::onStopProcessing() {
 }
 
 void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detection> detections, double elapsedMs) {
-    // 录像: 写帧到录像文件
-    auto recIt = cameraRecordings_.find(cameraId);
-    if (recIt != cameraRecordings_.end()) {
-        CameraRecording* rec = recIt.value();
-        if (rec && rec->isRecording && rec->writer && rec->writer->isOpened()) {
-            // QImage 转 cv::Mat
-            QImage convImg = image.convertToFormat(QImage::Format_RGB888);
-            cv::Mat mat(convImg.height(), convImg.width(), CV_8UC3, const_cast<uchar*>(convImg.constBits()), convImg.bytesPerLine());
-            cv::Mat bgr;
-            cv::cvtColor(mat, bgr, cv::COLOR_RGB2BGR);
-            // 缩放到1080p
-            cv::Mat resized;
-            cv::resize(bgr, resized, cv::Size(1920, 1080));
-            rec->writer->write(resized);
-        }
-    }
+    // 录像: 写帧到录像文件 (VideoRecorder 内部处理 RGB→BGR 和缩放)
+    QImage convImg = image.convertToFormat(QImage::Format_RGB888);
+    cv::Mat rgbMat(convImg.height(), convImg.width(), CV_8UC3,
+                   const_cast<uchar*>(convImg.constBits()), convImg.bytesPerLine());
+    videoRecorder_->writeFrame(cameraId, rgbMat);
 
     // MJPEG推流: 每帧都推
     QByteArray jpegData;
@@ -786,33 +780,8 @@ void MainWindow::enableControls(bool enabled) {
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     stopAllCameras();
-    // 停止所有录像
-    for (auto it = cameraRecordings_.begin(); it != cameraRecordings_.end(); ++it) {
-        auto rec = it.value();
-        if (rec) {
-            if (rec->isRecording && rec->writer && rec->writer->isOpened()) {
-                rec->writer->release();
-            }
-            if (rec->writer) delete rec->writer;
-            delete rec;  // ← 修复: 释放 CameraRecording 对象本身
-        }
-    }
-    cameraRecordings_.clear();
     if (isProcessing_) isProcessing_ = false;
     event->accept();
-}
-
-// ============================================================
-// 视频录制功能
-// ============================================================
-QString MainWindow::getRecordDir(int cameraId) {
-    QString baseDir = QDir::cleanPath(QDir::currentPath() + "/" + QString::fromStdString(Config::RECORD_DIR));
-    QDateTime now = QDateTime::currentDateTime();
-    QString dateDir = now.toString("yyyyMMdd");
-    QString cameraDir = QString("camera_%1").arg(cameraId);
-    QString fullPath = baseDir + "/" + dateDir + "/" + cameraDir;
-    QDir().mkpath(fullPath);
-    return fullPath;
 }
 
 void MainWindow::onStartRecording() {
@@ -821,154 +790,31 @@ void MainWindow::onStartRecording() {
         QMessageBox::warning(this, QString::fromUtf8("录像"), QString::fromUtf8("请先打开一个摄像头"));
         return;
     }
-
-    // 检查是否已在录制
-    auto it = cameraRecordings_.find(cameraId);
-    if (it != cameraRecordings_.end() && it.value()->isRecording) {
-        QMessageBox::information(this, QString::fromUtf8("录像"), QString::fromUtf8("该摄像头已在录制中"));
-        return;
-    }
-
-    // 创建录像目录: 年月日/摄像头ID/
-    QString recordDir = getRecordDir(cameraId);
-    QDateTime now = QDateTime::currentDateTime();
-    QString startTimeStr = now.toString("HHmmss");
-    
-    // 使用起止时间命名: 开始时间-结束时间.mp4 (结束时重命名)
-    QString videoPath = recordDir + "/" + startTimeStr + ".mp4";
-
-    // 从活跃摄像头获取帧尺寸
-    auto camIt = cameraWorkers_.find(cameraId);
-    int width = 1920, height = 1080;
-    if (camIt != cameraWorkers_.end() && camIt->worker) {
-        // 尝试从摄像头获取实际尺寸，这里使用默认值
-        // 实际尺寸会在第一次写帧时自动调整
-    }
-
-    // 创建 VideoWriter
-    cv::VideoWriter* writer = new cv::VideoWriter(
-        videoPath.toStdString(),
-        cv::VideoWriter::fourcc('m','p','4','v'),
-        25.0,  // FPS
-        cv::Size(width, height)
-    );
-
-    if (!writer->isOpened()) {
-        QMessageBox::critical(this, QString::fromUtf8("录像"), QString::fromUtf8("无法创建录像文件: ") + videoPath);
-        delete writer;
-        return;
-    }
-
-    // 保存录制信息
-    CameraRecording* rec = new CameraRecording();
-    rec->cameraId = cameraId;
-    rec->videoPath = videoPath;
-    rec->writer = writer;
-    rec->isRecording = true;
-    rec->startTime = now;
-    cameraRecordings_[cameraId] = rec;
-
-    ui->startRecordBtn->setEnabled(false);
-    ui->stopRecordBtn->setEnabled(true);
-
-    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("录像"), QString::fromUtf8("开始录制: %1 (摄像头%2)").arg(videoPath).arg(cameraId));
+    videoRecorder_->startRecording(cameraId);
 }
 
 void MainWindow::onStopRecording() {
     int cameraId = activeDisplayCamera_;
-    auto it = cameraRecordings_.find(cameraId);
-    if (it == cameraRecordings_.end() || !it.value()->isRecording) {
+    if (!videoRecorder_->isRecording(cameraId)) {
         QMessageBox::warning(this, QString::fromUtf8("录像"), QString::fromUtf8("当前没有正在录制的摄像头"));
         return;
     }
-
-    auto rec = it.value();
-    // 停止录制
-    if (rec->writer && rec->writer->isOpened()) {
-        rec->writer->release();
-    }
-    delete rec->writer;
-    rec->writer = nullptr;
-    rec->isRecording = false;
-
-    QDateTime now = QDateTime::currentDateTime();
-    QString startTimeStr = rec->startTime.toString("HHmmss");
-    QString endTimeStr = now.toString("HHmmss");
-    QString videoPath = rec->videoPath;
-
-    // 重命名为带起止时间的文件名: 开始时间-结束时间.mp4
-    QString newPath = videoPath;
-    newPath.replace(".mp4", "-" + endTimeStr + ".mp4");
-    
-    if (QFile::exists(videoPath)) {
-        QFile::rename(videoPath, newPath);
-    }
-
-    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("录像"), QString::fromUtf8("停止录制: %1").arg(newPath));
-
-    cameraRecordings_.erase(it);
-
-    ui->startRecordBtn->setEnabled(true);
-    ui->stopRecordBtn->setEnabled(false);
+    videoRecorder_->stopRecording(cameraId);
 }
 
 void MainWindow::onViewRecordings() {
-    QString recordDir = QDir::cleanPath(QDir::currentPath() + "/" + QString::fromStdString(Config::RECORD_DIR));
-    QDir dir(recordDir);
-    if (!dir.exists()) {
-        QMessageBox::information(this, QString::fromUtf8("录像"), QString::fromUtf8("录像目录不存在: ") + recordDir);
-        return;
-    }
-    // 打开文件目录
-    QDesktopServices::openUrl(QUrl::fromLocalFile(recordDir));
-    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("录像"), QString::fromUtf8("打开录像目录: %1").arg(recordDir));
+    videoRecorder_->openRecordDir();
+    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("录像"), QString::fromUtf8("打开录像目录"));
 }
 
 void MainWindow::onClearOldRecordings() {
     int keepDays = ui->recordDaysSpin->value();
-    QDateTime cutoff = QDateTime::currentDateTime().addDays(-keepDays);
-    
-    QString recordDir = QDir::cleanPath(QDir::currentPath() + "/" + QString::fromStdString(Config::RECORD_DIR));
-    QDir dir(recordDir);
-    if (!dir.exists()) return;
-    
-    int deletedCount = 0;
-    QFileInfoList dateDirs = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot);
-    for (const QFileInfo& dateDirInfo : dateDirs) {
-        QDateTime dirTime = QFileInfo(dir, dateDirInfo.fileName()).lastModified();
-        if (dirTime < cutoff) {
-            QString subDirPath = recordDir + "/" + dateDirInfo.fileName();
-            QDir subDir(subDirPath);
-            // 删除日期目录下的所有文件
-            QFileInfoList files = subDir.entryInfoList(QDir::Files);
-            for (const QFileInfo& f : files) {
-                QFile::remove(f.absoluteFilePath());
-                deletedCount++;
-            }
-            // 删除空的子目录
-            subDir.rmdir(subDirPath);
-            // 删除日期目录
-            dir.rmdir(dateDirInfo.fileName());
-        }
+    int deleted = videoRecorder_->cleanOldRecordings(keepDays);
+    if (deleted > 0) {
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("录像"), QString::fromUtf8("已清理 %1 个旧录像目录").arg(deleted));
     }
-    
-    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("录像"), QString::fromUtf8("已清理 %1 个旧录像文件").arg(deletedCount));
-    QMessageBox::information(this, QString::fromUtf8("清理完成"), 
-        QString::fromUtf8("已清理 %1 个旧录像文件").arg(deletedCount));
-}
-
-// 录像时写入帧
-void MainWindow::writeRecordingFrame(int cameraId, const cv::Mat& frame) {
-    auto it = cameraRecordings_.find(cameraId);
-    if (it == cameraRecordings_.end()) return;
-    auto rec = it.value();
-    if (!rec || !rec->isRecording) return;
-    if (!rec->writer || !rec->writer->isOpened()) return;
-    
-    // 缩放到1080p
-    cv::Mat resized;
-    cv::resize(frame, resized, cv::Size(1920, 1080));
-    rec->writer->write(resized);
+    QMessageBox::information(this, QString::fromUtf8("清理完成"),
+        QString::fromUtf8("已清理 %1 个旧录像目录").arg(deleted));
 }
 
 // ============================================================
