@@ -38,12 +38,13 @@
 #include "config.hpp"
 #include "runtime_config.hpp"
 #include "video_recorder.hpp"
+#include "model_manager.hpp"
 
 namespace Ui { class MainWindow; }
 
 
 // ============================================================
-// MainWindow: 涓荤獥鍙?
+// MainWindow: 主窗口
 // ============================================================
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -73,10 +74,10 @@ private slots:
     void onWorkerFinished(int cameraId);
     void onWorkerError(int cameraId, const QString& message);
 
-    // 鍛婅
+    // 告警
     void onAlertSaved(int cameraId, const QString& videoPath, const QString& imagePath, const QString& alertJson);
 
-    // WebSocket 娑堟伅澶勭悊
+    // WebSocket 消息处理
 
 private:
     void setupConnections();
@@ -91,15 +92,15 @@ private:
     void loadRuntimeConfig();
     void saveRuntimeConfig();
 
-    // 澶氭憚鍍忓ご绠＄悊
+    // 多摄像头管理
     struct CameraWorker {
         QThread* thread = nullptr;
         InferenceWorker* worker = nullptr;
-        QLabel* displayLabel = nullptr;  // 璇ヨ矾瀵瑰簲鐨勬樉绀烘爣绛?
+        QLabel* displayLabel = nullptr;  // 该路对应的显示标签
     };
     QMap<int, CameraWorker> cameraWorkers_;
-    int nextCameraId_ = 1;  // 涓嬩竴涓彲鐢ㄧ殑鎽勫儚澶碔D(0淇濈暀缁欓粯璁ゆ憚鍍忓ご鎸夐挳)
-    int activeDisplayCamera_ = 0;  // 褰撳墠鏄剧ず鐢婚潰鐨勬憚鍍忓ごID
+    int nextCameraId_ = 1;  // 下一个可用的摄像头ID(0保留给默认摄像头按钮)
+    int activeDisplayCamera_ = 0;  // 当前显示画面的摄像头ID
 
     Ui::MainWindow* ui;
     QLabel* statusMessageLabel_;
@@ -107,19 +108,19 @@ private:
     QLabel* timeLabel_;
     QLabel* wsAddressLabel_;
 
-    // 鏃ュ織杈撳嚭鍑芥暟
+    // 日志输出函数
     void log(const QString& category, const QString& message);
     QString currentTimestamp();
 
-    std::unique_ptr<YoloTrtEngine> engine_;
+    std::unique_ptr<ModelManager> modelManager_;
 
     std::unique_ptr<HttpFileServer> httpFileServer_;
     std::unique_ptr<WebSocketManager> wsManager_;  // 新: WebSocket 管理器
 
-    // MJPEG 鎺ㄦ祦鏈嶅姟
+    // MJPEG 推流服务
     std::unique_ptr<MjpegStreamer> mjpegStreamer_;
 
-    // 寰呯‘璁ょ殑鍛婅: alarm_id 鈫?{json娑堟伅, 閲嶈瘯瀹氭椂鍣? 閲嶈瘯娆℃暟}
+    // 待确认的告警: alarm_id → {json消息, 重试定时器, 重试次数}
     struct PendingAlarm {
         QString jsonMessage;
         QTimer* retryTimer = nullptr;
@@ -128,7 +129,7 @@ private:
 
     static constexpr int MAX_RETRY_COUNT = 10;
 
-    // 鍥存爮璁剧疆: stream_id 鈫?fence鍖哄煙
+    // 围栏设置: stream_id → fence区域
     struct FenceRegion {
         float x1, y1, x2, y2;
     };
@@ -143,7 +144,7 @@ private slots:
     void onClearOldRecordings();
 
 private:
-    bool isProcessing_ = false;  // 瑙嗛妯″紡鐢?
+    bool isProcessing_ = false;  // 视频模式用
     float confThreshold_;
     float nmsThreshold_;
 };

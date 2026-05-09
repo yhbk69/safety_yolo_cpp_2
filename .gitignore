@@ -27,6 +27,7 @@ output/
 *.user # VS 用户设置（路径等私人信息）
 *.suo # VS 解决方案用户选项
 .qwen/
+.claude/
 
 # 保留项目文件（必须提交！）
 !*.sln

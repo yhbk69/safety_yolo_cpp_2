@@ -71,11 +71,11 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <!--
-    Qt 5.15.2 閰嶇疆璇存槑:
-    1. 浠?https://download.qt.io/archive/qt/5.15/5.15.2/ 涓嬭浇瀹夎
-    2. 瀹夎鏃堕€夋嫨 MSVC 2019 64-bit 缁勪欢
-    3. 瀹夎瀹屾垚鍚庝慨鏀逛笅鏂?QTDIR 涓哄疄闄呭畨瑁呰矾寰?
-    4. 鏈厤缃亣璁惧畨瑁呰矾寰勪负: C:/Qt/Qt5.15.2/5.15.2/msvc2019_64
+    Qt 5.15.2 配置说明:
+    1. 从 https://download.qt.io/archive/qt/5.15/5.15.2/ 下载安装
+    2. 安装时选择 MSVC 2019 64-bit 组件
+    3. 安装完成后修改下方 QTDIR 为实际安装路径
+    4. 本配置假设安装路径为: C:/Qt/Qt5.15.2/5.15.2/msvc2019_64
   -->
   <PropertyGroup>
     <QTDIR Condition="'$(QTDIR)' == ''">C:\Qt\5.15.2\msvc2019_64</QTDIR>
@@ -219,9 +219,9 @@
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <!--
-    Qt MOC (Meta-Object Compiler): 澶勭悊 mainwindow.hpp 涓殑 Q_OBJECT 瀹?
-    浣跨敤 .vcxproj 鏋勫缓闇€瑕佸畨瑁?Qt VS Tools 鎵╁睍(鍏嶈垂), 瀹冧細鑷姩澶勭悊 MOC.
-    浣跨敤 CMake 鏋勫缓鍒?AUTOMOC 浼氳嚜鍔ㄥ鐞? 鏃犻渶浠讳綍鎵╁睍.
+    Qt MOC (Meta-Object Compiler): 处理 mainwindow.hpp 中的 Q_OBJECT 宏
+    使用 .vcxproj 构建需要安装 Qt VS Tools 扩展(免费), 它会自动处理 MOC.
+    使用 CMake 构建则 AUTOMOC 会自动处理, 无需任何扩展.
   -->
   <ItemGroup>
     <ClCompile Include="gui_logger.cpp" />
@@ -229,6 +229,7 @@
     <ClCompile Include="http_file_server.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mainwindow.cpp" />
+    <ClCompile Include="model_manager.cpp" />
     <ClCompile Include="mjpeg_streamer.cpp" />
     <ClCompile Include="moc_mainwindow.cpp" />
     <ClCompile Include="video_recorder.cpp" />
@@ -244,6 +245,7 @@
     <ClInclude Include="logger.hpp" />
     <ClInclude Include="mainwindow.hpp" />
     <ClInclude Include="mjpeg_streamer.hpp" />
+    <ClInclude Include="model_manager.hpp" />
     <ClInclude Include="postprocessor.hpp" />
     <ClInclude Include="preprocessor.hpp" />
     <ClInclude Include="runtime_config.hpp" />

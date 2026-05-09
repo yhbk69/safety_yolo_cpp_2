@@ -37,7 +37,6 @@ namespace fs = std::filesystem;
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-    , engine_(nullptr)
     , isProcessing_(false)
     , confThreshold_(Config::CONF_THRESHOLD)
     , nmsThreshold_(Config::IOU_THRESHOLD)
@@ -114,6 +113,17 @@ MainWindow::MainWindow(QWidget *parent)
         .updateButtons = [this](bool isRecording) {
             ui->startRecordBtn->setEnabled(!isRecording);
             ui->stopRecordBtn->setEnabled(isRecording);
+        }
+    });
+
+    // 初始化 ModelManager
+    modelManager_ = std::make_unique<ModelManager>();
+    modelManager_->setCallbacks({
+        .log = [this](const QString& cat, const QString& msg) {
+            GuiLogger::log(ui->logTextEdit, cat, msg);
+        },
+        .onError = [this](const QString& msg) {
+            GuiLogger::log(ui->logTextEdit, "模型", "加载失败: " + msg);
         }
     });
 
@@ -240,20 +250,17 @@ void MainWindow::onLoadModel() {
     statusMessageLabel_->setText("正在加载模型, 请稍候...");
     QApplication::processEvents();
 
-    try {
-        engine_ = std::make_unique<YoloTrtEngine>(modelPath.toStdString());
+    if (modelManager_->load(modelPath.toStdString())) {
         ui->modelStatusLabel->setText("✓ 已加载");
         ui->modelStatusLabel->setStyleSheet("color: green; font-weight: bold;");
         statusMessageLabel_->setText("模型加载成功, 可以开始检测");
         GuiLogger::log(ui->logTextEdit, "模型", QString("模型加载成功: %1").arg(modelPath));
         enableControls(true);
         ui->reloadModelBtn->setEnabled(true);
-    } catch (const std::exception& e) {
+    } else {
         ui->modelStatusLabel->setText("✗ 加载失败");
         ui->modelStatusLabel->setStyleSheet("color: red; font-weight: bold;");
         statusMessageLabel_->setText("模型加载失败");
-        GuiLogger::log(ui->logTextEdit, "模型", QString("模型加载失败: %1").arg(e.what()));
-        QMessageBox::critical(this, "模型加载错误", e.what());
         enableControls(false);
     }
     ui->loadModelBtn->setEnabled(true);
@@ -261,7 +268,7 @@ void MainWindow::onLoadModel() {
 
 void MainWindow::onReloadModel() {
     QString modelPath = ui->modelPathEdit->text().trimmed();
-    if (modelPath.isEmpty() || !engine_) {
+    if (modelPath.isEmpty() || !modelManager_->isLoaded()) {
         QMessageBox::warning(this, "警告", "当前没有已加载的模型");
         return;
     }
@@ -275,18 +282,16 @@ void MainWindow::onReloadModel() {
     stopAllCameras();
     QApplication::processEvents();
 
-    try {
-        engine_->reload(modelPath.toStdString());
+    if (modelManager_->reload(modelPath.toStdString())) {
         ui->modelStatusLabel->setText("✓ 已重载");
         ui->modelStatusLabel->setStyleSheet("color: green; font-weight: bold;");
         statusMessageLabel_->setText("模型热切换成功");
         GuiLogger::log(ui->logTextEdit, "模型", QString("模型热切换成功: %1").arg(modelPath));
-    } catch (const std::exception& e) {
+    } else {
         ui->modelStatusLabel->setText("✗ 重载失败");
         ui->modelStatusLabel->setStyleSheet("color: red; font-weight: bold;");
         statusMessageLabel_->setText("模型热切换失败");
-        GuiLogger::log(ui->logTextEdit, "错误", QString("模型热切换失败: %1").arg(e.what()));
-        QMessageBox::critical(this, "热切换错误", e.what());
+        GuiLogger::log(ui->logTextEdit, "错误", "模型热切换失败");
     }
     ui->reloadModelBtn->setEnabled(true);
 }
@@ -295,7 +300,7 @@ void MainWindow::onReloadModel() {
 // 推理模式
 // ============================================================
 void MainWindow::onOpenImage() {
-    if (!engine_) { QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("请先加载模型")); return; }
+    if (!modelManager_->isLoaded()) { QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("请先加载模型")); return; }
     stopAllCameras();
     QString filePath = QFileDialog::getOpenFileName(
         this, "选择图片", "", "图片文件 (*.jpg *.jpeg *.png *.bmp);;所有文件 (*)");
@@ -318,7 +323,7 @@ void MainWindow::processSingleImage(const std::string& path) {
         cv::Mat processed = Preprocessor::letterbox(img);
         std::vector<float> tensor = Preprocessor::imageToTensor(processed);
         std::vector<Detection> detections;
-        engine_->infer(tensor, detections, img.cols, img.rows,
+        modelManager_->engine()->infer(tensor, detections, img.cols, img.rows,
                        confThreshold_, nmsThreshold_);
         auto end = std::chrono::high_resolution_clock::now();
         double elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
@@ -340,7 +345,7 @@ void MainWindow::processSingleImage(const std::string& path) {
 }
 
 void MainWindow::onOpenVideo() {
-    if (!engine_) { QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("请先加载模型")); return; }
+    if (!modelManager_->isLoaded()) { QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("请先加载模型")); return; }
     stopAllCameras();
     if (isProcessing_) onStopProcessing();
 
@@ -356,7 +361,7 @@ void MainWindow::onOpenVideo() {
     isProcessing_ = true;
 
     auto* thread = new QThread(this);
-    auto* worker = new InferenceWorker(engine_.get(), -1, "video", filePath);
+    auto* worker = new InferenceWorker(modelManager_->engine(), -1, "video", filePath);
     worker->moveToThread(thread);
 
     connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
@@ -387,7 +392,7 @@ void MainWindow::onOpenVideo() {
 
 void MainWindow::onOpenCamera(bool checked) {
     if (checked) {
-        if (!engine_) {
+        if (!modelManager_->isLoaded()) {
             QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("请先加载模型"));
             ui->cameraBtn->setChecked(false);
             return;
@@ -403,7 +408,7 @@ void MainWindow::onOpenCamera(bool checked) {
         activeDisplayCamera_ = 0;
 
         auto* thread = new QThread(this);
-        auto* worker = new InferenceWorker(engine_.get(), 0, "camera_0");
+        auto* worker = new InferenceWorker(modelManager_->engine(), 0, "camera_0");
         worker->moveToThread(thread);
 
         connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
@@ -434,7 +439,7 @@ void MainWindow::onOpenCamera(bool checked) {
 }
 
 void MainWindow::onAddCamera() {
-    if (!engine_) {
+    if (!modelManager_->isLoaded()) {
         QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("请先加载模型"));
         return;
     }
@@ -454,7 +459,7 @@ void MainWindow::onAddCamera() {
     activeDisplayCamera_ = camId;
 
     auto* thread = new QThread(this);
-    auto* worker = new InferenceWorker(engine_.get(), camId, camName, source);
+    auto* worker = new InferenceWorker(modelManager_->engine(), camId, camName, source);
     worker->moveToThread(thread);
 
     connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
@@ -543,7 +548,7 @@ void MainWindow::stopAllCameras() {
 }
 
 void MainWindow::onOpenFolder() {
-    if (!engine_) { QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("请先加载模型")); return; }
+    if (!modelManager_->isLoaded()) { QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("请先加载模型")); return; }
     stopAllCameras();
 
     QString dirPath = QFileDialog::getExistingDirectory(
@@ -569,7 +574,7 @@ void MainWindow::onOpenFolder() {
                     cv::Mat processed = Preprocessor::letterbox(img);
                     std::vector<float> tensor = Preprocessor::imageToTensor(processed);
                     std::vector<Detection> detections;
-                    engine_->infer(tensor, detections, img.cols, img.rows,
+                    modelManager_->engine()->infer(tensor, detections, img.cols, img.rows,
                                    confThreshold_, nmsThreshold_);
                     Postprocessor::drawDetections(img, detections);
                     cv::imwrite(Config::OUTPUT_DIR + "/result_" +
