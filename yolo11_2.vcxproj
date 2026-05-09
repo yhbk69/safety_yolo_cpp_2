@@ -229,6 +229,7 @@
     <ClCompile Include="http_file_server.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mainwindow.cpp" />
+    <ClCompile Include="camera_manager.cpp" />
     <ClCompile Include="model_manager.cpp" />
     <ClCompile Include="mjpeg_streamer.cpp" />
     <ClCompile Include="moc_mainwindow.cpp" />
@@ -237,6 +238,7 @@
     <ClCompile Include="moc_inference_worker.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="camera_manager.hpp" />
     <ClInclude Include="config.hpp" />
     <ClInclude Include="gui_logger.hpp" />
     <ClInclude Include="http_file_server.hpp" />

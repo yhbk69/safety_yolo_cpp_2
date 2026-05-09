@@ -39,6 +39,7 @@
 #include "runtime_config.hpp"
 #include "video_recorder.hpp"
 #include "model_manager.hpp"
+#include "camera_manager.hpp"
 
 namespace Ui { class MainWindow; }
 
@@ -92,14 +93,7 @@ private:
     void loadRuntimeConfig();
     void saveRuntimeConfig();
 
-    // 多摄像头管理
-    struct CameraWorker {
-        QThread* thread = nullptr;
-        InferenceWorker* worker = nullptr;
-        QLabel* displayLabel = nullptr;  // 该路对应的显示标签
-    };
-    QMap<int, CameraWorker> cameraWorkers_;
-    int nextCameraId_ = 1;  // 下一个可用的摄像头ID(0保留给默认摄像头按钮)
+    std::unique_ptr<CameraManager> cameraManager_;
     int activeDisplayCamera_ = 0;  // 当前显示画面的摄像头ID
 
     Ui::MainWindow* ui;

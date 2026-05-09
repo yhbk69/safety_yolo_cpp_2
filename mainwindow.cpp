@@ -81,10 +81,11 @@ MainWindow::MainWindow(QWidget *parent)
     });
     wsManager_->setGetStreamsCallback([this]() -> QList<StreamInfo> {
         QList<StreamInfo> streams;
-        for (auto it = cameraWorkers_.begin(); it != cameraWorkers_.end(); ++it) {
+        for (int id : cameraManager_->cameraIds()) {
             StreamInfo info;
-            info.streamId = QString::number(it.key());
-            info.name = it.value().worker ? it.value().worker->cameraName() : QString("摄像头%1").arg(it.key());
+            info.streamId = QString::number(id);
+            auto* w = cameraManager_->worker(id);
+            info.name = w ? w->cameraName() : QString("摄像头%1").arg(id);
             info.url = QString("http://%1:%2/stream")
                 .arg(QString::fromStdString(Config::HOST_IP))
                 .arg(RuntimeConfig::instance().streamPort());
@@ -94,7 +95,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
     wsManager_->setViewStreamCallback([this](const QString& streamId) -> QString {
         int camId = streamId.toInt();
-        if (!cameraWorkers_.contains(camId)) return QString();
+        if (!cameraManager_->contains(camId)) return QString();
         return QString("http://%1:%2/stream")
             .arg(QString::fromStdString(Config::HOST_IP))
             .arg(RuntimeConfig::instance().streamPort());
@@ -124,6 +125,14 @@ MainWindow::MainWindow(QWidget *parent)
         },
         .onError = [this](const QString& msg) {
             GuiLogger::log(ui->logTextEdit, "模型", "加载失败: " + msg);
+        }
+    });
+
+    // 初始化 CameraManager
+    cameraManager_ = std::make_unique<CameraManager>();
+    cameraManager_->setCallbacks({
+        .log = [this](const QString& cat, const QString& msg) {
+            GuiLogger::log(ui->logTextEdit, cat, msg);
         }
     });
 
@@ -374,7 +383,7 @@ void MainWindow::onOpenVideo() {
         statusMessageLabel_->setText(QString::fromUtf8("视频处理完成"));
         fpsLabel_->setText("FPS: --");
         GuiLogger::log(ui->logTextEdit, "系统", "视频处理完成");
-        // 视频worker不在cameraWorkers_中, 手动清理
+        // 视频worker不在CameraManager中, 手动清理
         sender()->deleteLater();
     });
     connect(worker, &InferenceWorker::errorOccurred, this, [this](int, const QString& msg) {
@@ -398,7 +407,7 @@ void MainWindow::onOpenCamera(bool checked) {
             return;
         }
         // 如果默认摄像头已在运行, 先停止
-        if (cameraWorkers_.contains(0)) stopCamera(0);
+        if (cameraManager_->contains(0)) stopCamera(0);
 
         GuiLogger::log(ui->logTextEdit, "检测", "启动默认摄像头");
         statusMessageLabel_->setText(QString::fromUtf8("正在启动摄像头..."));
@@ -421,8 +430,7 @@ void MainWindow::onOpenCamera(bool checked) {
         });
         connect(thread, &QThread::finished, worker, &QObject::deleteLater);
 
-        CameraWorker cw{thread, worker, nullptr};
-        cameraWorkers_[0] = cw;
+        cameraManager_->add(0, thread, worker);
         thread->start();
 
         // 自动开始录制
@@ -452,7 +460,7 @@ void MainWindow::onAddCamera() {
         QLineEdit::Normal, "", &ok);
     if (!ok || source.isEmpty()) return;
 
-    int camId = nextCameraId_++;
+    int camId = cameraManager_->allocateId();
     QString camName = QString("camera_%1").arg(camId);
 
     GuiLogger::log(ui->logTextEdit, "检测", QString("添加摄像头 %1: %2").arg(camId).arg(source));
@@ -472,13 +480,12 @@ void MainWindow::onAddCamera() {
     });
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
 
-    CameraWorker cw{thread, worker, nullptr};
-    cameraWorkers_[camId] = cw;
+    cameraManager_->add(camId, thread, worker);
     thread->start();
 
     // 更新摄像头状态显示
     ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
-    ui->cameraStatusLabel->setText(QString::fromUtf8("● %1路运行").arg(cameraWorkers_.size()));
+    ui->cameraStatusLabel->setText(QString::fromUtf8("● %1路运行").arg(cameraManager_->count()));
     ui->stopBtn->setEnabled(true);
 
     // 自动开始录制
@@ -493,55 +500,40 @@ void MainWindow::onRemoveCamera(int cameraId) {
 }
 
 void MainWindow::stopCamera(int cameraId) {
-    auto it = cameraWorkers_.find(cameraId);
-    if (it == cameraWorkers_.end()) return;
+    if (!cameraManager_->contains(cameraId)) return;
 
     GuiLogger::log(ui->logTextEdit, "系统", QString("正在停止摄像头 %1...").arg(cameraId));
 
-    // 0. 如果该摄像头正在录制，先停止录制
+    // 如果该摄像头正在录制，先停止录制
     if (videoRecorder_->isRecording(cameraId)) {
         GuiLogger::log(ui->logTextEdit, "录像", QString("摄像头%1正在录制，自动停止录制").arg(cameraId));
         activeDisplayCamera_ = cameraId;
         onStopRecording();
     }
 
-    // 1. 设置停止标志
-    if (it->worker) it->worker->stop();
+    // 委托 CameraManager 清理工作线程
+    cameraManager_->stop(cameraId);
 
-    // 2. 等待线程退出（缩短超时时间到2秒）
-    if (it->thread) {
-        if (!it->thread->wait(2000)) {
-            GuiLogger::log(ui->logTextEdit, "系统", QString("摄像头 %1 线程未响应，强制终止").arg(cameraId));
-            // 不再使用强制释放，避免阻塞
-            it->thread->terminate();
-            it->thread->wait(500);
-        }
-    }
-
-    // 3. 清理资源
-    cameraWorkers_.erase(it);
-
-    // 4. 更新UI状态
+    // 更新UI状态
     if (cameraId == 0) {
         ui->cameraBtn->setChecked(false);
         ui->cameraBtn->setText(QString::fromUtf8("开启摄像头"));
     }
 
-    if (cameraWorkers_.isEmpty()) {
+    if (cameraManager_->isEmpty()) {
         ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px;");
         ui->cameraStatusLabel->setText(QString::fromUtf8("⏹ 未开启"));
         ui->stopBtn->setEnabled(false);
         fpsLabel_->setText("FPS: --");
     } else {
-        ui->cameraStatusLabel->setText(QString::fromUtf8("● %1路运行").arg(cameraWorkers_.size()));
+        ui->cameraStatusLabel->setText(QString::fromUtf8("● %1路运行").arg(cameraManager_->count()));
     }
 
     GuiLogger::log(ui->logTextEdit, "系统", QString("摄像头 %1 已停止").arg(cameraId));
 }
 
 void MainWindow::stopAllCameras() {
-    // 复制key列表避免迭代时修改
-    auto ids = cameraWorkers_.keys();
+    auto ids = cameraManager_->cameraIds();
     for (int id : ids) {
         stopCamera(id);
     }
@@ -655,12 +647,7 @@ void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detect
 }
 
 void MainWindow::onWorkerFinished(int cameraId) {
-    auto it = cameraWorkers_.find(cameraId);
-    if (it != cameraWorkers_.end()) {
-        if (it->thread) {
-            it->thread->quit();
-            it->thread->wait();
-        }
+    if (cameraManager_->contains(cameraId)) {
         // 如果是默认摄像头, 重置UI
         if (cameraId == 0) {
             ui->cameraBtn->setChecked(false);
@@ -668,12 +655,12 @@ void MainWindow::onWorkerFinished(int cameraId) {
             ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px;");
             ui->cameraStatusLabel->setText(QString::fromUtf8("⏹ 未开启"));
         }
-        cameraWorkers_.erase(it);
+        cameraManager_->stop(cameraId);
         GuiLogger::log(ui->logTextEdit, "系统", QString("摄像头 %1 处理完成").arg(cameraId));
     }
 
     // 如果没有任何活跃worker, 重置UI
-    if (cameraWorkers_.isEmpty()) {
+    if (cameraManager_->isEmpty()) {
         isProcessing_ = false;
         enableControls(true);
         ui->stopBtn->setEnabled(false);
@@ -832,16 +819,11 @@ void MainWindow::onBatchInferenceToggled(bool checked) {
             GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("当前BATCH_SIZE=1, 无法启用批量推理"));
             return;
         }
-        // 设置所有活跃worker
-        for (auto& cw : cameraWorkers_) {
-            if (cw.worker) cw.worker->setBatchInference(true);
-        }
+        cameraManager_->setBatchInference(true);
         statusMessageLabel_->setText(QString::fromUtf8("批量推理已启用 (batch=%1)").arg(Config::BATCH_SIZE));
         GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("批量推理已启用 (batch=%1)").arg(Config::BATCH_SIZE));
     } else {
-        for (auto& cw : cameraWorkers_) {
-            if (cw.worker) cw.worker->setBatchInference(false);
-        }
+        cameraManager_->setBatchInference(false);
         statusMessageLabel_->setText(QString::fromUtf8("批量推理已禁用, 使用单帧推理"));
         GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("批量推理已禁用"));
     }
