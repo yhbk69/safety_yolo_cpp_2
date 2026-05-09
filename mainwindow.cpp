@@ -75,6 +75,36 @@ MainWindow::MainWindow(QWidget *parent)
     auto& cfg = RuntimeConfig::instance();
     mjpegStreamer_->start((quint16)cfg.streamPort(), QString::fromStdString(Config::HOST_IP));
 
+    // 初始化 WebSocket 管理器
+    wsManager_ = std::make_unique<WebSocketManager>();
+    wsManager_->setLogCallback([this](const QString& cat, const QString& msg) {
+        GuiLogger::log(ui->logTextEdit, cat, msg);
+    });
+    wsManager_->setGetStreamsCallback([this]() -> QList<StreamInfo> {
+        QList<StreamInfo> streams;
+        for (auto it = cameraWorkers_.begin(); it != cameraWorkers_.end(); ++it) {
+            StreamInfo info;
+            info.streamId = QString::number(it.key());
+            info.name = it.value().worker ? it.value().worker->cameraName() : QString("摄像头%1").arg(it.key());
+            info.url = QString("http://%1:%2/stream")
+                .arg(QString::fromStdString(Config::HOST_IP))
+                .arg(RuntimeConfig::instance().streamPort());
+            streams.append(info);
+        }
+        return streams;
+    });
+    wsManager_->setViewStreamCallback([this](const QString& streamId) -> QString {
+        int camId = streamId.toInt();
+        if (!cameraWorkers_.contains(camId)) return QString();
+        return QString("http://%1:%2/stream")
+            .arg(QString::fromStdString(Config::HOST_IP))
+            .arg(RuntimeConfig::instance().streamPort());
+    });
+    wsManager_->start();
+    wsAddressLabel_->setText(QString("WebSocket: ws://%1:%2")
+        .arg(QString::fromStdString(Config::HOST_IP))
+        .arg(Config::WEBSOCKET_PORT));
+
     if (fs::exists(Config::MODEL_PATH)) onLoadModel();
 
     ui->batchInferenceCheck->setChecked(Config::USE_BATCH_INFERENCE);
