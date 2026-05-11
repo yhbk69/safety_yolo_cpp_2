@@ -735,17 +735,16 @@ void MainWindow::onBatchInferenceToggled(bool checked) {
 // ============================================================
 void MainWindow::loadRuntimeConfig() {
     auto& cfg = RuntimeConfig::instance();
-    QString cfgPath = QDir::currentPath() + "/config.json";
-    if (QFile::exists(cfgPath)) {
-        if (cfg.loadFromFile(cfgPath)) {
-            GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("已加载运行时配置: %1").arg(cfgPath));
-        } else {
-            GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("配置文件解析失败, 使用默认值"));
-        }
-    } else {
-        // 首次运行, 生成默认配置文件
-        cfg.saveToFile(cfgPath);
-        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("已生成默认配置: %1").arg(cfgPath));
+    switch (cfg.init()) {
+    case RuntimeConfig::InitResult::Loaded:
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("已加载运行时配置: %1").arg(cfg.configFilePath()));
+        break;
+    case RuntimeConfig::InitResult::Created:
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("已生成默认配置: %1").arg(cfg.configFilePath()));
+        break;
+    case RuntimeConfig::InitResult::Failed:
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("配置文件解析失败, 使用默认值"));
+        break;
     }
 
     // 用运行时配置覆盖UI初始值
@@ -761,9 +760,8 @@ void MainWindow::saveRuntimeConfig() {
     cfg.setConfThreshold(confThreshold_);
     cfg.setIouThreshold(nmsThreshold_);
     cfg.setModelPath(ui->modelPathEdit->text());
-    QString cfgPath = QDir::currentPath() + "/config.json";
-    cfg.saveToFile(cfgPath);
-    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("配置已保存: %1").arg(cfgPath));
+    cfg.saveToFile(cfg.configFilePath());
+    GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("配置已保存: %1").arg(cfg.configFilePath()));
 }
 
 void MainWindow::onSettings() {

@@ -78,6 +78,20 @@ public:
 
     // ---- 文件 I/O ----
 
+    /** init() 返回值: 已加载 / 已创建默认 / 解析失败 */
+    enum class InitResult { Loaded, Created, Failed };
+
+    /**
+     * @brief 初始化: 从 configFilePath() 加载配置; 文件不存在则创建默认配置
+     * @return Loaded 成功加载 / Created 已创建默认文件 / Failed 解析失败
+     */
+    InitResult init() {
+        if (QFile::exists(configFilePath_)) {
+            return loadFromFile(configFilePath_) ? InitResult::Loaded : InitResult::Failed;
+        }
+        return saveToFile(configFilePath_) ? InitResult::Created : InitResult::Failed;
+    }
+
     bool loadFromFile(const QString& path) {
         QFile file(path);
         if (!file.open(QIODevice::ReadOnly)) {
