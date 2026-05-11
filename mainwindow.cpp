@@ -255,6 +255,17 @@ MainWindow::~MainWindow() {
     if (isProcessing_) {
         isProcessing_ = false;
     }
+
+    // 备份: 确保所有工作线程已退出, 避免 ~QThread 触发 assert
+    const auto threads = findChildren<QThread*>();
+    for (auto* t : threads) {
+        t->quit();
+        if (!t->wait(2000)) {
+            t->terminate();
+            t->wait(1000);
+        }
+    }
+
     httpFileServer_.reset();
     delete ui;
 }
@@ -1024,8 +1035,24 @@ void MainWindow::enableControls(bool enabled) {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    saveRuntimeConfig();
     stopAllCameras();
-    if (isProcessing_) isProcessing_ = false;
+
+    // 清理输出通道 (必须在 stopAllCameras 之后, 避免 videoRecorder_ 悬空)
+    videoRecorder_ = nullptr;
+    sinks_.clear();
+
+    // 等待所有工作线程退出 (应用关闭时可以阻塞等待)
+    const auto threads = findChildren<QThread*>();
+    for (auto* t : threads) {
+        t->quit();
+        if (!t->wait(3000)) {
+            qDebug() << "[WARN] closeEvent: thread" << t << "timed out, terminating";
+            t->terminate();
+            t->wait(1000);
+        }
+    }
+
     event->accept();
 }
 
