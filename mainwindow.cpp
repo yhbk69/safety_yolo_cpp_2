@@ -26,9 +26,8 @@
 #include <QFile>
 #include <QInputDialog>
 #include <QDialog>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
 #include <QDialogButtonBox>
+#include <QDebug>
 
 #include <filesystem>
 
@@ -68,8 +67,8 @@ MainWindow::MainWindow(QWidget *parent)
     cameraListWidget_->setMaximumHeight(150);
     cameraListWidget_->setContextMenuPolicy(Qt::CustomContextMenu);
     cameraListWidget_->setStyleSheet(
-        "QListWidget { font-size: 16px; background-color: #1e1e1e; border: 1px solid #444; border-radius: 4px; }"
-        "QListWidget::item { padding: 2px; }"
+        "QListWidget { background-color: #1e1e1e; border: 1px solid #444; border-radius: 4px; }"
+        "QListWidget::item { padding: 4px 8px; border-bottom: 1px solid #333; }"
         "QListWidget::item:selected { background-color: #2a3f5f; }");
     {
         auto* rightLayout = qobject_cast<QVBoxLayout*>(ui->rightPanel->layout());
@@ -83,12 +82,16 @@ MainWindow::MainWindow(QWidget *parent)
         auto* item = cameraListWidget_->itemAt(pos);
         if (!item) return;
         int camId = item->data(Qt::UserRole).toInt();
+        qDebug() << "[DEBUG] context menu for cam" << camId;
         QMenu menu;
         auto* removeAction = menu.addAction(QString::fromUtf8("移除摄像头 %1").arg(camId));
         connect(removeAction, &QAction::triggered, this, [this, camId]() {
+            qDebug() << "[DEBUG] remove action triggered for cam" << camId;
             onRemoveCamera(camId);
+            qDebug() << "[DEBUG] remove action done";
         });
         menu.exec(cameraListWidget_->mapToGlobal(pos));
+        qDebug() << "[DEBUG] context menu done";
     });
 
     statusMessageLabel_->setText("就绪 - 请加载模型后开始检测");
@@ -442,18 +445,17 @@ void MainWindow::onAddCamera() {
     // 弹出对话框: 输入摄像头设备ID或RTSP地址
     bool ok = false;
     QString source = QInputDialog::getText(this,
-        QString::fromUtf8("添加摄像头"),
+        QString::fromUtf8("添加摄像头 - 视频源"),
         QString::fromUtf8("输入摄像头设备ID(0,1,2...)或RTSP地址:"),
         QLineEdit::Normal, "", &ok);
     if (!ok || source.isEmpty()) return;
 
-    // 输入别名
+    // 别名(可选)
     QString alias = QInputDialog::getText(this,
-        QString::fromUtf8("摄像头别名"),
-        QString::fromUtf8("为此摄像头设置别名(便于识别):"),
-        QLineEdit::Normal, source, &ok);
-    if (!ok) alias = source;
-    else if (alias.trimmed().isEmpty()) alias = source;
+        QString::fromUtf8("添加摄像头 - 别名"),
+        QString::fromUtf8("为此摄像头设置别名(便于识别), 留空使用源地址:"),
+        QLineEdit::Normal, QString(), &ok);
+    if (!ok || alias.trimmed().isEmpty()) alias = source;
 
     int camId = cameraManager_->allocateId();
     QString camName = QString("camera_%1").arg(camId);
@@ -486,11 +488,14 @@ void MainWindow::onAddCamera() {
 }
 
 void MainWindow::onRemoveCamera(int cameraId) {
+    qDebug() << "[DEBUG] onRemoveCamera" << cameraId;
     stopCamera(cameraId);
+    qDebug() << "[DEBUG] onRemoveCamera done" << cameraId;
 }
 
 void MainWindow::stopCamera(int cameraId) {
-    if (!cameraManager_->contains(cameraId)) return;
+    qDebug() << "[DEBUG] stopCamera" << cameraId << "START";
+    if (!cameraManager_->contains(cameraId)) { qDebug() << "[DEBUG] stopCamera" << cameraId << "- not in manager"; return; }
 
     GuiLogger::log(ui->logTextEdit, "系统", QString("正在停止摄像头 %1...").arg(cameraId));
 
@@ -526,6 +531,7 @@ void MainWindow::stopCamera(int cameraId) {
 
     GuiLogger::log(ui->logTextEdit, "系统", QString("摄像头 %1 已停止").arg(cameraId));
     refreshCameraList();
+    qDebug() << "[DEBUG] stopCamera" << cameraId << "DONE";
 }
 
 void MainWindow::stopAllCameras() {
@@ -570,11 +576,16 @@ void MainWindow::autoStartCameras() {
 }
 
 void MainWindow::onCameraListClicked(QListWidgetItem* item) {
-    if (!item) return;
-    activeDisplayCamera_ = item->data(Qt::UserRole).toInt();
+    qDebug() << "[DEBUG] onCameraListClicked";
+    if (!item) { qDebug() << "[DEBUG] onCameraListClicked: null item"; return; }
+    bool ok = false;
+    int camId = item->data(Qt::UserRole).toInt(&ok);
+    qDebug() << "[DEBUG] onCameraListClicked camId:" << camId << "ok:" << ok;
+    if (!ok) return;
+    activeDisplayCamera_ = camId;
     QString alias = cameraAliases_.count(activeDisplayCamera_) ? cameraAliases_[activeDisplayCamera_] : QString::number(activeDisplayCamera_);
     GuiLogger::log(ui->logTextEdit, "系统", QString("切换到: %1").arg(alias));
-    // 延迟刷新, 避免在 itemClicked 信号内 clear 列表导致崩溃
+    // 延迟刷新
     QTimer::singleShot(0, this, [this]() { refreshCameraList(); });
     // 切换后同步阈值
     auto it = camConfThresholds_.find(activeDisplayCamera_);
@@ -584,55 +595,55 @@ void MainWindow::onCameraListClicked(QListWidgetItem* item) {
         ui->confSlider->setValue(static_cast<int>(confThreshold_ * 100));
         ui->nmsSlider->setValue(static_cast<int>(nmsThreshold_ * 100));
     }
+    qDebug() << "[DEBUG] onCameraListClicked done";
 }
 
 void MainWindow::refreshCameraList() {
     cameraListWidget_->clear();
     auto ids = cameraManager_->cameraIds();
+
+    // 更新 activeDisplayCamera_ 保证有效
+    if (activeDisplayCamera_ >= 0 && !ids.contains(activeDisplayCamera_)) {
+        activeDisplayCamera_ = ids.isEmpty() ? 0 : ids.first();
+    }
+
     for (int id : ids) {
-        QString alias = cameraAliases_.count(id) ? cameraAliases_[id] : QString("摄像头 %1").arg(id);
-        QString src = cameraSources_.count(id) ? cameraSources_[id] : "";
+        QString alias = cameraAliases_.count(id) ? cameraAliases_[id] : QString();
+        QString src = cameraSources_.count(id) ? cameraSources_[id] : QString();
         bool active = (id == activeDisplayCamera_);
 
-        // 自定义 Item Widget
-        auto* container = new QWidget();
-        auto* layout = new QVBoxLayout(container);
-        layout->setContentsMargins(8, 4, 8, 4);
-        layout->setSpacing(0);
-
-        auto* titleRow = new QHBoxLayout();
-        auto* aliasLabel = new QLabel(alias);
-        aliasLabel->setStyleSheet(QString("font-size: 18px; font-weight: bold; color: %1;")
-            .arg(active ? "#2196F3" : "#ffffff"));
-        titleRow->addWidget(aliasLabel);
-
-        if (active) {
-            auto* activeLabel = new QLabel("● 当前");
-            activeLabel->setStyleSheet("font-size: 14px; color: #4CAF50; font-weight: bold; margin-left: 8px;");
-            titleRow->addWidget(activeLabel);
+        // 显示名: 别名 / 源地址 / 默认名
+        QString displayName;
+        if (!alias.isEmpty()) displayName = alias;
+        else if (!src.isEmpty()) {
+            QString shortSrc = src;
+            if (shortSrc.startsWith("rtsp://")) shortSrc = shortSrc.mid(7);
+            if (shortSrc.length() > 40) shortSrc = shortSrc.left(37) + "...";
+            displayName = shortSrc;
         }
-        titleRow->addStretch();
-        layout->addLayout(titleRow);
+        else displayName = QString("摄像头 %1").arg(id);
 
-        if (!src.isEmpty()) {
-            QString displaySrc = src;
-            if (displaySrc.length() > 50) displaySrc = displaySrc.left(47) + "...";
-            auto* srcLabel = new QLabel(displaySrc);
-            srcLabel->setStyleSheet("font-size: 13px; color: #888888;");
-            layout->addWidget(srcLabel);
+        QString text = displayName;
+        if (active) text += "  ●";
+        // 源地址显示在第二行(仅当有别名的场景, 且不是默认摄像头)
+        if (!alias.isEmpty() && !src.isEmpty()) {
+            QString shortSrc = src;
+            if (shortSrc.startsWith("rtsp://")) shortSrc = shortSrc.mid(7);
+            if (shortSrc.length() > 40) shortSrc = shortSrc.left(37) + "...";
+            text += "\n" + shortSrc;
         }
 
-        // 交替背景色
-        int idx = cameraListWidget_->count();
-        container->setStyleSheet(idx % 2 == 0
-            ? "background-color: #2a2a2a; border-radius: 4px;"
-            : "background-color: #333333; border-radius: 4px;");
-
-        auto* item = new QListWidgetItem(cameraListWidget_);
+        auto* item = new QListWidgetItem(text, cameraListWidget_);
         item->setData(Qt::UserRole, id);
-        layout->activate();
-        item->setSizeHint(container->minimumSizeHint());
-        cameraListWidget_->setItemWidget(item, container);
+        item->setSizeHint(QSize(0, active ? 52 : 42));
+
+        QFont f = item->font();
+        f.setPointSize(active ? 14 : 12);
+        f.setBold(active);
+        item->setFont(f);
+
+        if (active) item->setForeground(QColor("#2196F3"));
+        else item->setForeground(QColor("#cccccc"));
     }
 }
 
@@ -660,6 +671,7 @@ void MainWindow::savePerCameraThresholds() {
 }
 
 void MainWindow::startCameraWorker(int cameraId, const QString& name, const QString& source) {
+    qDebug() << "[DEBUG] startCameraWorker" << cameraId << "name:" << name << "source:" << source;
     auto* thread = new QThread(this);
     auto* worker = new InferenceWorker(modelManager_->engine(), cameraId, name);
     worker->moveToThread(thread);
@@ -783,6 +795,7 @@ void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detect
 }
 
 void MainWindow::onWorkerFinished(int cameraId) {
+    qDebug() << "[DEBUG] onWorkerFinished" << cameraId << "- contains:" << cameraManager_->contains(cameraId);
     if (cameraManager_->contains(cameraId)) {
         // 如果是默认摄像头, 重置UI
         if (cameraId == 0) {

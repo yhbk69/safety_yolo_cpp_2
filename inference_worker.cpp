@@ -12,6 +12,7 @@
 #include <QDateTime>
 #include <QBuffer>
 #include <QThread>
+#include <cstdint>
 
 InferenceWorker::InferenceWorker(IEngine* engine, int cameraId,
                                      const QString& cameraName)
@@ -36,6 +37,7 @@ void InferenceWorker::process(std::unique_ptr<IVideoSource> source,
     cv::Mat frame;
     bool firstFrame = true;
 
+    int64_t frameCount = 0;
     while (running_) {
         if (!source->readFrame(frame)) {
             if (firstFrame) {
@@ -46,6 +48,7 @@ void InferenceWorker::process(std::unique_ptr<IVideoSource> source,
         }
         firstFrame = false;
 
+        frameCount++;
         auto t0 = std::chrono::steady_clock::now();
         auto result = processOneFrame(frame, confThresh, nmsThresh);
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -64,10 +67,12 @@ void InferenceWorker::process(std::unique_ptr<IVideoSource> source,
         }
     }
 
+    qDebug() << "[TRACE] InferenceWorker::process" << cameraId_ << "- loop exited, emitting finished, frames:" << frameCount;
     emit finished(cameraId_);
 }
 
 void InferenceWorker::stop() {
+    qDebug() << "[TRACE] InferenceWorker::stop" << cameraId_ << "- setting running_ = false";
     running_ = false;
 }
 

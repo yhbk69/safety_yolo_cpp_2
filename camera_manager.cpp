@@ -4,6 +4,7 @@
  */
 
 #include "camera_manager.hpp"
+#include <QDebug>
 
  // 构造函数：初始化 CameraManager 实例
 CameraManager::CameraManager() {
@@ -65,19 +66,23 @@ QList<int> CameraManager::cameraIds() const {
  */
 void CameraManager::stop(int cameraId) {
     auto it = entries_.find(cameraId);
-    if (it == entries_.end()) return;
+    if (it == entries_.end()) { qDebug() << "[DEBUG] CameraManager::stop" << cameraId << "- not found"; return; }
 
+    qDebug() << "[DEBUG] CameraManager::stop" << cameraId << "- worker->stop()";
     // 1. 通知 Worker 停止工作
     if (it->worker) it->worker->stop();
 
     // 2. 等待线程自然退出 (不调用 terminate, 避免在 CUDA 推理中途杀死线程)
     if (it->thread) {
         it->thread->requestInterruption();
+        qDebug() << "[DEBUG] CameraManager::stop" << cameraId << "- waiting for thread...";
         if (!it->thread->wait(5000)) {
+            qDebug() << "[DEBUG] CameraManager::stop" << cameraId << "- thread TIMEOUT, scheduling cleanup";
             if (callbacks_.log) {
-                callbacks_.log("系统", QString("摄像头%1 线程未及时退出, 后台保留").arg(cameraId));
+                callbacks_.log("系统", QString("摄像头%1 线程未及时退出, 后台清理中").arg(cameraId));
             }
-            // 断开信号槽防止回调访问已销毁对象
+            // 断开信号槽, 计划删除worker和thread
+            it->worker->deleteLater();
             it->thread->disconnect();
             it->thread->deleteLater();
             entries_.erase(it);
@@ -85,6 +90,7 @@ void CameraManager::stop(int cameraId) {
         }
     }
 
+    qDebug() << "[DEBUG] CameraManager::stop" << cameraId << "- thread exited OK, erasing entry";
     entries_.erase(it);
 }
 
