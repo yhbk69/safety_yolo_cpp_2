@@ -16,6 +16,7 @@
 #include <QString>
 #include <QTextEdit>
 #include <QDateTime>
+#include <functional>
 
 class GuiLogger {
 public:
@@ -41,6 +42,13 @@ public:
      * @return 时间戳字符串
      */
     static QString currentTimestamp();
+
+    /**
+     * @brief 创建日志回调函数对象,捕获 logWidget 指针
+     * @param logWidget 日志显示控件
+     * @return std::function 可供各 manager 注册为日志回调
+     */
+    static std::function<void(const QString&, const QString&)> makeLogCallback(QTextEdit* logWidget);
 
     // 预定义的日志类别常量(避免重复字符串字面量)
     inline static const QString CATEGORY_SYSTEM = QString::fromUtf8("系统");

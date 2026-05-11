@@ -90,6 +90,7 @@ private:
     void enableControls(bool enabled);
     void startCameraWorker(int cameraId, const QString& name, const QString& source,
                            void (InferenceWorker::*processFn)(float, float));
+    void startVideoWorker(const QString& filePath);
     void stopCamera(int cameraId);
     void stopAllCameras();
     void closeEvent(QCloseEvent* event) override;

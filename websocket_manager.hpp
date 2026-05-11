@@ -119,6 +119,20 @@ public:
     void pushAlarm(const QString& alarmId, const QString& alertJson);
 
     /**
+     * @brief 推送告警(自动从 alertJson 解析 alarm_id)
+     * @param alertJson 告警 JSON 字符串
+     *
+     * JSON 格式: { "data": { "alarm_id": "...", "alarm_type": "..." } }
+     */
+    void pushAlarm(const QString& alertJson);
+
+    /**
+     * @brief 告警推送回调(供 UI 层更新状态)
+     */
+    using AlarmPushedCallback = std::function<void(const QString& alarmType, const QString& alarmId)>;
+    void setAlarmPushedCallback(AlarmPushedCallback callback);
+
+    /**
      * @brief 确认告警(停止重试)
      * @param alarmId 告警 ID
      */
@@ -197,6 +211,9 @@ private:
 
     // 日志回调
     std::function<void(const QString&, const QString&)> logCallback_;
+
+    // 告警推送回调
+    AlarmPushedCallback alarmPushedCallback_;
 };
 
 #endif // WEBSOCKET_MANAGER_HPP

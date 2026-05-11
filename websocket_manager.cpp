@@ -131,6 +131,24 @@ void WebSocketManager::pushAlarm(const QString& alarmId, const QString& alertJso
     }
 }
 
+void WebSocketManager::pushAlarm(const QString& alertJson) {
+    QJsonDocument doc = QJsonDocument::fromJson(alertJson.toUtf8());
+    QString alarmId = doc.object()["data"].toObject()["alarm_id"].toString();
+    if (alarmId.isEmpty()) return;
+
+    pushAlarm(alarmId, alertJson);
+
+    if (alarmPushedCallback_) {
+        QString alarmType = doc.object()["data"].toObject()["alarm_type"].toString();
+        alarmPushedCallback_(alarmType, alarmId);
+    }
+}
+
+void WebSocketManager::setAlarmPushedCallback(AlarmPushedCallback callback) {
+    QMutexLocker locker(&mutex_);
+    alarmPushedCallback_ = std::move(callback);
+}
+
 void WebSocketManager::ackAlarm(const QString& alarmId) {
     QMutexLocker locker(&mutex_);
 

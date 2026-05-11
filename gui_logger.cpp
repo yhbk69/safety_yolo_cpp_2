@@ -42,3 +42,9 @@ void GuiLogger::log(QTextEdit* logWidget, const QString& category, const QString
 QString GuiLogger::currentTimestamp() {
     return QDateTime::currentDateTime().toString("hh:mm:ss");
 }
+
+std::function<void(const QString&, const QString&)> GuiLogger::makeLogCallback(QTextEdit* logWidget) {
+    return [logWidget](const QString& cat, const QString& msg) {
+        log(logWidget, cat, msg);
+    };
+}

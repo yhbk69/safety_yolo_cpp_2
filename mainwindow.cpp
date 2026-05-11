@@ -67,17 +67,13 @@ MainWindow::MainWindow(QWidget *parent)
 
     // 初始化 MJPEG 推流服务
     mjpegStreamer_ = std::make_unique<MjpegStreamer>();
-    mjpegStreamer_->setLogCallback([this](const QString& cat, const QString& msg) {
-        GuiLogger::log(ui->logTextEdit, cat, msg);
-    });
+    mjpegStreamer_->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
     auto& cfg = RuntimeConfig::instance();
     mjpegStreamer_->start((quint16)cfg.streamPort(), QString::fromStdString(Config::HOST_IP));
 
     // 初始化 WebSocket 管理器
     wsManager_ = std::make_unique<WebSocketManager>();
-    wsManager_->setLogCallback([this](const QString& cat, const QString& msg) {
-        GuiLogger::log(ui->logTextEdit, cat, msg);
-    });
+    wsManager_->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
     wsManager_->setGetStreamsCallback([this]() -> QList<StreamInfo> {
         QList<StreamInfo> streams;
         for (int id : cameraManager_->cameraIds()) {
@@ -100,48 +96,57 @@ MainWindow::MainWindow(QWidget *parent)
             .arg(RuntimeConfig::instance().streamPort());
     });
     wsManager_->start();
+    wsManager_->setAlarmPushedCallback([this](const QString& alarmType, const QString& alarmId) {
+        statusMessageLabel_->setText(
+            QString("[告警] %1 - 视频已保存, 等待确认").arg(alarmType));
+        GuiLogger::log(ui->logTextEdit, "告警", QString("发送告警: %1, ID: %2").arg(alarmType, alarmId.left(8)));
+    });
     wsAddressLabel_->setText(QString("WebSocket: ws://%1:%2")
         .arg(QString::fromStdString(Config::HOST_IP))
         .arg(Config::WEBSOCKET_PORT));
 
     // 初始化 VideoRecorder
     videoRecorder_ = std::make_unique<VideoRecorder>();
-    videoRecorder_->setCallbacks({
-        .log = [this](const QString& cat, const QString& msg) {
-            GuiLogger::log(ui->logTextEdit, cat, msg);
-        },
-        .updateButtons = [this](bool isRecording) {
-            ui->startRecordBtn->setEnabled(!isRecording);
-            ui->stopRecordBtn->setEnabled(isRecording);
-        }
-    });
+    {
+        VideoRecorder::Callbacks vcb = {
+            .log = GuiLogger::makeLogCallback(ui->logTextEdit),
+            .updateButtons = [this](bool isRecording) {
+                ui->startRecordBtn->setEnabled(!isRecording);
+                ui->stopRecordBtn->setEnabled(isRecording);
+            }
+        };
+        videoRecorder_->setCallbacks(vcb);
+    }
 
     // 初始化 ModelManager
     modelManager_ = std::make_unique<ModelManager>();
-    modelManager_->setCallbacks({
-        .log = [this](const QString& cat, const QString& msg) {
-            GuiLogger::log(ui->logTextEdit, cat, msg);
-        },
-        .onError = [this](const QString& msg) {
-            GuiLogger::log(ui->logTextEdit, "模型", "加载失败: " + msg);
-        }
-    });
+    {
+        ModelManager::Callbacks mcb = {
+            .log = GuiLogger::makeLogCallback(ui->logTextEdit),
+            .onError = [this](const QString& msg) {
+                GuiLogger::log(ui->logTextEdit, "模型", "加载失败: " + msg);
+            }
+        };
+        modelManager_->setCallbacks(mcb);
+    }
 
     // 初始化 CameraManager
     cameraManager_ = std::make_unique<CameraManager>();
-    cameraManager_->setCallbacks({
-        .log = [this](const QString& cat, const QString& msg) {
-            GuiLogger::log(ui->logTextEdit, cat, msg);
-        }
-    });
+    {
+        CameraManager::Callbacks ccb = {
+            .log = GuiLogger::makeLogCallback(ui->logTextEdit)
+        };
+        cameraManager_->setCallbacks(ccb);
+    }
 
     // 初始化 InferenceManager
     inferenceManager_ = std::make_unique<InferenceManager>();
-    inferenceManager_->setCallbacks({
-        .log = [this](const QString& cat, const QString& msg) {
-            GuiLogger::log(ui->logTextEdit, cat, msg);
-        }
-    });
+    {
+        InferenceManager::Callbacks icb = {
+            .log = GuiLogger::makeLogCallback(ui->logTextEdit)
+        };
+        inferenceManager_->setCallbacks(icb);
+    }
 
     if (fs::exists(Config::MODEL_PATH)) onLoadModel();
 
@@ -197,22 +202,7 @@ void MainWindow::setupConnections() {
 // ============================================================
 void MainWindow::onAlertSaved(int cameraId, const QString& videoPath, const QString& imagePath,
                                const QString& alertJson) {
-    // 解析 alarm_id
-    QJsonDocument doc = QJsonDocument::fromJson(alertJson.toUtf8());
-    QString alarmId = doc.object()["data"].toObject()["alarm_id"].toString();
-    if (alarmId.isEmpty()) return;
-
-    // 使用 WebSocketManager 推送告警(含 ACK 重试)
-    wsManager_->pushAlarm(alarmId, alertJson);
-
-    // 告警重试已由 wsManager_ 内部管理
-
-    // 状态栏
-    QString alarmType = doc.object()["data"].toObject()["alarm_type"].toString();
-    statusMessageLabel_->setText(
-        QString("[告警] %1 - 视频已保存, 等待确认").arg(alarmType));
-    GuiLogger::log(ui->logTextEdit, "告警", QString("发送告警: %1, ID: %2").arg(alarmType, alarmId.left(8)));
-    qDebug() << "Alarm sent:" << alertJson;
+    wsManager_->pushAlarm(alertJson);
 }
 
 // ============================================================
@@ -345,35 +335,9 @@ void MainWindow::onOpenVideo() {
     ui->cameraBtn->setChecked(false);
     ui->stopBtn->setEnabled(true);
     isProcessing_ = true;
-
-    auto* thread = new QThread(this);
-    auto* worker = new InferenceWorker(modelManager_->engine(), -1, "video", filePath);
-    worker->moveToThread(thread);
-
-    connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
-    connect(worker, &InferenceWorker::alertSaved, this, &MainWindow::onAlertSaved);
-    connect(worker, &InferenceWorker::finished, this, [this](int cameraId) {
-        // 视频模式结束
-        isProcessing_ = false;
-        enableControls(true);
-        ui->stopBtn->setEnabled(false);
-        statusMessageLabel_->setText(QString::fromUtf8("视频处理完成"));
-        fpsLabel_->setText("FPS: --");
-        GuiLogger::log(ui->logTextEdit, "系统", "视频处理完成");
-        // 视频worker不在CameraManager中, 手动清理
-        sender()->deleteLater();
-    });
-    connect(worker, &InferenceWorker::errorOccurred, this, [this](int, const QString& msg) {
-        QMessageBox::critical(this, QString::fromUtf8("处理错误"), msg);
-    });
-    connect(thread, &QThread::started, worker, [this, worker, filePath]() {
-        worker->setBatchInference(ui->batchInferenceCheck->isChecked());
-        worker->processVideo(filePath, confThreshold_, nmsThreshold_);
-    });
-    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
-
     activeDisplayCamera_ = -1;
-    thread->start();
+
+    startVideoWorker(filePath);
 }
 
 void MainWindow::onOpenCamera(bool checked) {
@@ -503,6 +467,26 @@ void MainWindow::startCameraWorker(int cameraId, const QString& name, const QStr
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
 
     cameraManager_->add(cameraId, thread, worker);
+    thread->start();
+}
+
+void MainWindow::startVideoWorker(const QString& filePath) {
+    auto* thread = new QThread(this);
+    auto* worker = new InferenceWorker(modelManager_->engine(), -1, "video", filePath);
+    worker->moveToThread(thread);
+
+    connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
+    connect(worker, &InferenceWorker::alertSaved, this, &MainWindow::onAlertSaved);
+    connect(worker, &InferenceWorker::finished, this, &MainWindow::onWorkerFinished);
+    connect(worker, &InferenceWorker::errorOccurred, this, [this](int, const QString& msg) {
+        QMessageBox::critical(this, QString::fromUtf8("处理错误"), msg);
+    });
+    connect(thread, &QThread::started, worker, [this, worker, filePath]() {
+        worker->setBatchInference(ui->batchInferenceCheck->isChecked());
+        worker->processVideo(filePath, confThreshold_, nmsThreshold_);
+    });
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+
     thread->start();
 }
 
