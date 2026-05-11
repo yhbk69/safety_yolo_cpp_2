@@ -22,6 +22,7 @@
 #include <functional>
 #include <memory>
 #include <map>
+#include "output_sink.hpp"
 
 // 录制会话(每个摄像头一个)
 struct RecordingSession {
@@ -35,7 +36,7 @@ struct RecordingSession {
     double fps = 30.0;          // 帧率
 };
 
-class VideoRecorder {
+class VideoRecorder : public IOutputSink {
 public:
     VideoRecorder();
     ~VideoRecorder();
@@ -97,6 +98,7 @@ public:
      * @note 如果未录制或 writer 未打开,自动跳过
      */
     void writeFrame(int cameraId, const cv::Mat& frame);
+    void onFrame(const FrameData& data) override;
 
     // ============================================================
     // 文件管理

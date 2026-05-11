@@ -254,6 +254,7 @@
     <ClInclude Include="mainwindow.hpp" />
     <ClInclude Include="mjpeg_streamer.hpp" />
     <ClInclude Include="model_manager.hpp" />
+    <ClInclude Include="output_sink.hpp" />
     <ClInclude Include="postprocessor.hpp" />
     <ClInclude Include="preprocessor.hpp" />
     <ClInclude Include="runtime_config.hpp" />

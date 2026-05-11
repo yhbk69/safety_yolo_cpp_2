@@ -155,6 +155,14 @@ QList<int> VideoRecorder::recordingCameraIds() const {
 // 写帧
 // ============================================================
 
+void VideoRecorder::onFrame(const FrameData& data) {
+    if (data.image.isNull()) return;
+    QImage conv = data.image.convertToFormat(QImage::Format_RGB888);
+    cv::Mat rgb(conv.height(), conv.width(), CV_8UC3,
+                const_cast<uchar*>(conv.constBits()), conv.bytesPerLine());
+    writeFrame(data.cameraId, rgb);
+}
+
 void VideoRecorder::writeFrame(int cameraId, const cv::Mat& frame) {
     QMutexLocker locker(&mutex_);
 

@@ -28,6 +28,7 @@
 #include <QMap>
 #include <functional>
 #include <memory>
+#include "output_sink.hpp"
 
 // 围栏区域定义
 struct FenceRegion {
@@ -51,7 +52,7 @@ struct StreamInfo {
     QString url;
 };
 
-class WebSocketManager {
+class WebSocketManager : public IOutputSink {
 public:
     static constexpr int MAX_RETRY_COUNT = 10;  // 最大重试次数
 
@@ -110,6 +111,7 @@ public:
      * @param message JSON 字符串
      */
     void broadcast(const QString& message);
+    void onAlert(const AlertData& data) override;
 
     /**
      * @brief 推送告警并启动 ACK 重试机制

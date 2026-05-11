@@ -96,6 +96,10 @@ void WebSocketManager::setViewStreamCallback(std::function<QString(const QString
 // 消息广播与告警管理
 // ============================================================
 
+void WebSocketManager::onAlert(const AlertData& data) {
+    pushAlarm(data.alertJson);
+}
+
 void WebSocketManager::broadcast(const QString& message) {
     QMutexLocker locker(&mutex_);
     for (auto* client : clients_) {

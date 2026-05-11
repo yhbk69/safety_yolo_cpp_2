@@ -9,6 +9,9 @@
 #include "settings_dialog.hpp"
 #include "detection_utils.hpp"
 #include "video_source.hpp"
+#include "mjpeg_streamer.hpp"
+#include "websocket_manager.hpp"
+#include "video_recorder.hpp"
 
 #include <QAction>
 #include <QFileDialog>
@@ -67,48 +70,54 @@ MainWindow::MainWindow(QWidget *parent)
 
 
     // 初始化 MJPEG 推流服务
-    mjpegStreamer_ = std::make_unique<MjpegStreamer>();
-    mjpegStreamer_->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
-    auto& cfg = RuntimeConfig::instance();
-    mjpegStreamer_->start((quint16)cfg.streamPort(), QString::fromStdString(Config::HOST_IP));
+    {
+        auto mjpeg = std::make_unique<MjpegStreamer>();
+        mjpeg->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
+        auto& cfg = RuntimeConfig::instance();
+        mjpeg->start((quint16)cfg.streamPort(), QString::fromStdString(Config::HOST_IP));
+        sinks_.push_back(std::move(mjpeg));
+    }
 
     // 初始化 WebSocket 管理器
-    wsManager_ = std::make_unique<WebSocketManager>();
-    wsManager_->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
-    wsManager_->setGetStreamsCallback([this]() -> QList<StreamInfo> {
-        QList<StreamInfo> streams;
-        for (int id : cameraManager_->cameraIds()) {
-            StreamInfo info;
-            info.streamId = QString::number(id);
-            auto* w = cameraManager_->worker(id);
-            info.name = w ? w->cameraName() : QString("摄像头%1").arg(id);
-            info.url = QString("http://%1:%2/stream")
+    {
+        auto ws = std::make_unique<WebSocketManager>();
+        ws->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
+        ws->setGetStreamsCallback([this]() -> QList<StreamInfo> {
+            QList<StreamInfo> streams;
+            for (int id : cameraManager_->cameraIds()) {
+                StreamInfo info;
+                info.streamId = QString::number(id);
+                auto* w = cameraManager_->worker(id);
+                info.name = w ? w->cameraName() : QString("摄像头%1").arg(id);
+                info.url = QString("http://%1:%2/stream")
+                    .arg(QString::fromStdString(Config::HOST_IP))
+                    .arg(RuntimeConfig::instance().streamPort());
+                streams.append(info);
+            }
+            return streams;
+        });
+        ws->setViewStreamCallback([this](const QString& streamId) -> QString {
+            int camId = streamId.toInt();
+            if (!cameraManager_->contains(camId)) return QString();
+            return QString("http://%1:%2/stream")
                 .arg(QString::fromStdString(Config::HOST_IP))
                 .arg(RuntimeConfig::instance().streamPort());
-            streams.append(info);
-        }
-        return streams;
-    });
-    wsManager_->setViewStreamCallback([this](const QString& streamId) -> QString {
-        int camId = streamId.toInt();
-        if (!cameraManager_->contains(camId)) return QString();
-        return QString("http://%1:%2/stream")
-            .arg(QString::fromStdString(Config::HOST_IP))
-            .arg(RuntimeConfig::instance().streamPort());
-    });
-    wsManager_->start();
-    wsManager_->setAlarmPushedCallback([this](const QString& alarmType, const QString& alarmId) {
-        statusMessageLabel_->setText(
-            QString("[告警] %1 - 视频已保存, 等待确认").arg(alarmType));
-        GuiLogger::log(ui->logTextEdit, "告警", QString("发送告警: %1, ID: %2").arg(alarmType, alarmId.left(8)));
-    });
+        });
+        ws->start();
+        ws->setAlarmPushedCallback([this](const QString& alarmType, const QString& alarmId) {
+            statusMessageLabel_->setText(
+                QString("[告警] %1 - 视频已保存, 等待确认").arg(alarmType));
+            GuiLogger::log(ui->logTextEdit, "告警", QString("发送告警: %1, ID: %2").arg(alarmType, alarmId.left(8)));
+        });
+        sinks_.push_back(std::move(ws));
+    }
     wsAddressLabel_->setText(QString("WebSocket: ws://%1:%2")
         .arg(QString::fromStdString(Config::HOST_IP))
         .arg(Config::WEBSOCKET_PORT));
 
     // 初始化 VideoRecorder
-    videoRecorder_ = std::make_unique<VideoRecorder>();
     {
+        auto recorder = std::make_unique<VideoRecorder>();
         VideoRecorder::Callbacks vcb = {
             .log = GuiLogger::makeLogCallback(ui->logTextEdit),
             .updateButtons = [this](bool isRecording) {
@@ -116,7 +125,9 @@ MainWindow::MainWindow(QWidget *parent)
                 ui->stopRecordBtn->setEnabled(isRecording);
             }
         };
-        videoRecorder_->setCallbacks(vcb);
+        recorder->setCallbacks(vcb);
+        videoRecorder_ = recorder.get();
+        sinks_.push_back(std::move(recorder));
     }
 
     // 初始化 ModelManager
@@ -203,7 +214,10 @@ void MainWindow::setupConnections() {
 // ============================================================
 void MainWindow::onAlertSaved(int cameraId, const QString& videoPath, const QString& imagePath,
                                const QString& alertJson) {
-    wsManager_->pushAlarm(alertJson);
+    AlertData ad{cameraId, alertJson};
+    for (auto& sink : sinks_) {
+        sink->onAlert(ad);
+    }
 }
 
 // ============================================================
@@ -536,14 +550,10 @@ void MainWindow::onStopProcessing() {
 }
 
 void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detection> detections, double elapsedMs) {
-    // 录像: 写帧到录像文件 (VideoRecorder 内部处理 RGB→BGR 和缩放)
-    QImage convImg = image.convertToFormat(QImage::Format_RGB888);
-    cv::Mat rgbMat(convImg.height(), convImg.width(), CV_8UC3,
-                   const_cast<uchar*>(convImg.constBits()), convImg.bytesPerLine());
-    videoRecorder_->writeFrame(cameraId, rgbMat);
-
-    // MJPEG推流: 每帧都推
-    mjpegStreamer_->pushImage(image);
+    FrameData fd{cameraId, image, detections, elapsedMs};
+    for (auto& sink : sinks_) {
+        sink->onFrame(fd);
+    }
 
     // 只更新当前活跃显示的摄像头画面
     if (cameraId == activeDisplayCamera_) {

@@ -24,8 +24,9 @@
 #include <QList>
 #include <chrono>
 #include <functional>
+#include "output_sink.hpp"
 
-class MjpegStreamer {
+class MjpegStreamer : public IOutputSink {
 public:
     MjpegStreamer();
     ~MjpegStreamer();
@@ -33,6 +34,7 @@ public:
     void start(quint16 port, const QString& hostIp);
     void pushFrame(const QByteArray& jpegData);
     void pushImage(const QImage& image, int quality = 60);
+    void onFrame(const FrameData& data) override;
     void stop();
     int clientCount() const;
     void setLogCallback(std::function<void(const QString&, const QString&)> callback);

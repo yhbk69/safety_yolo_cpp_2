@@ -30,17 +30,17 @@
 #include <opencv2/opencv.hpp>
 
 #include "gui_logger.hpp"
-#include "mjpeg_streamer.hpp"
-#include "websocket_manager.hpp"
 #include "inference_engine.hpp"
 #include "inference_worker.hpp"
 #include "http_file_server.hpp"
 #include "inference_manager.hpp"
 #include "config.hpp"
 #include "runtime_config.hpp"
-#include "video_recorder.hpp"
+#include "output_sink.hpp"
 #include "model_manager.hpp"
 #include "camera_manager.hpp"
+
+class VideoRecorder;
 
 namespace Ui { class MainWindow; }
 
@@ -113,10 +113,10 @@ private:
     std::unique_ptr<InferenceManager> inferenceManager_;
 
     std::unique_ptr<HttpFileServer> httpFileServer_;
-    std::unique_ptr<WebSocketManager> wsManager_;  // 新: WebSocket 管理器
 
-    // MJPEG 推流服务
-    std::unique_ptr<MjpegStreamer> mjpegStreamer_;
+    // 输出通道 (MJPEG, WebSocket 告警, 录像 等)
+    std::vector<std::unique_ptr<IOutputSink>> sinks_;
+    VideoRecorder* videoRecorder_ = nullptr;  // 别名, UI 控制用
 
     // 待确认的告警: alarm_id → {json消息, 重试定时器, 重试次数}
     struct PendingAlarm {
@@ -131,8 +131,6 @@ private:
     struct FenceRegion {
         float x1, y1, x2, y2;
     };
-
-    std::unique_ptr<VideoRecorder> videoRecorder_;
 
 private slots:
     // 录制相关

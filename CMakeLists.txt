@@ -74,6 +74,7 @@ set(HEADERS
     inference_worker.hpp
     http_file_server.hpp
     video_source.hpp
+    output_sink.hpp
 )
 
 # ============ 生成可执行文件 ============

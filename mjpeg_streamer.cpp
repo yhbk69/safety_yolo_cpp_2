@@ -97,6 +97,10 @@ int MjpegStreamer::clientCount() const {
     return clients_.size();
 }
 
+void MjpegStreamer::onFrame(const FrameData& data) {
+    pushImage(data.image);
+}
+
 void MjpegStreamer::setLogCallback(std::function<void(const QString&, const QString&)> callback) {
     logCallback_ = std::move(callback);
 }
