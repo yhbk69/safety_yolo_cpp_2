@@ -5,6 +5,7 @@
 
 #include "mjpeg_streamer.hpp"
 #include <QObject>
+#include <QBuffer>
 #include <QTcpSocket>
 #include <QTcpServer>
 
@@ -63,6 +64,14 @@ void MjpegStreamer::pushFrame(const QByteArray& jpegData) {
             client->write(chunk);
         }
     }
+}
+
+void MjpegStreamer::pushImage(const QImage& image, int quality) {
+    QByteArray jpegData;
+    QBuffer buf(&jpegData);
+    buf.open(QIODevice::WriteOnly);
+    image.save(&buf, "JPEG", quality);
+    pushFrame(jpegData);
 }
 
 void MjpegStreamer::stop() {

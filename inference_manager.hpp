@@ -21,6 +21,10 @@ public:
 
     void setCallbacks(const Callbacks& cb) { callbacks_ = cb; }
 
+    // --- 工具方法 ---
+
+    static QString formatClassSummary(const std::vector<Detection>& detections);
+
     // --- 单张图片推理 ---
     struct ImageResult {
         cv::Mat annotated;          // BGR image with detections drawn

@@ -242,6 +242,7 @@
   <ItemGroup>
     <ClInclude Include="camera_manager.hpp" />
     <ClInclude Include="config.hpp" />
+    <ClInclude Include="detection_utils.hpp" />
     <ClInclude Include="gui_logger.hpp" />
     <ClInclude Include="http_file_server.hpp" />
     <ClInclude Include="inference_manager.hpp" />

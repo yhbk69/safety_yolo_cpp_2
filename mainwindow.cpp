@@ -7,6 +7,7 @@
 #include "ui_mainwindow.h"
 #include "gui_logger.hpp"
 #include "settings_dialog.hpp"
+#include "detection_utils.hpp"
 
 #include <QAction>
 #include <QFileDialog>
@@ -20,7 +21,6 @@
 #include <QUuid>
 #include <QFile>
 #include <QInputDialog>
-#include <QBuffer>
 #include <QDialog>
 #include <QDialogButtonBox>
 
@@ -557,13 +557,7 @@ void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detect
     videoRecorder_->writeFrame(cameraId, rgbMat);
 
     // MJPEG推流: 每帧都推
-    QByteArray jpegData;
-    {
-        QBuffer buf(&jpegData);
-        buf.open(QIODevice::WriteOnly);
-        image.save(&buf, "JPEG", 60);
-    }
-    mjpegStreamer_->pushFrame(jpegData);
+    mjpegStreamer_->pushImage(image);
 
     // 只更新当前活跃显示的摄像头画面
     if (cameraId == activeDisplayCamera_) {
@@ -574,25 +568,14 @@ void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detect
         double fps = 1000.0 / elapsedMs;
         fpsLabel_->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
     }
-    // 每5帧输出一次检测详情日志（只在检测到目标时输出）
+    // 每5帧输出一次检测详情日志
     static int logFrameCount = 0;
-    if (++logFrameCount % 5 == 0) {
-        if (!detections.empty()) {
-            // 统计各类别数量
-            std::map<int, int> classCounts;
-            for (const auto& det : detections) {
-                classCounts[det.class_id]++;
-            }
-            QString detail;
-            for (const auto& [cid, cnt] : classCounts) {
-                if (!detail.isEmpty()) detail += ", ";
-                detail += QString("%1×%2").arg(cnt).arg(QString::fromStdString(Config::CLASS_NAMES[cid]));
-            }
-            double fps = (elapsedMs > 0) ? 1000.0 / elapsedMs : 0;
-            GuiLogger::log(ui->logTextEdit, "检测", QString("%1 | %2 | %3ms, FPS:%4")
-                .arg(detections.size()).arg(detail)
-                .arg(elapsedMs, 0, 'f', 1).arg(fps, 0, 'f', 1));
-        }
+    if (++logFrameCount % 5 == 0 && !detections.empty()) {
+        double fps = (elapsedMs > 0) ? 1000.0 / elapsedMs : 0;
+        GuiLogger::log(ui->logTextEdit, "检测", QString("%1 | %2 | %3ms, FPS:%4")
+            .arg(detections.size())
+            .arg(InferenceManager::formatClassSummary(detections))
+            .arg(elapsedMs, 0, 'f', 1).arg(fps, 0, 'f', 1));
     }
 }
 
@@ -661,9 +644,7 @@ void MainWindow::updateDetectionList(const std::vector<Detection>& detections, d
         for (int i = 0; i < newCount && i < oldCount; ++i) {
             auto* item = ui->resultListWidget->item(i);
             const auto& name = Config::CLASS_NAMES[detections[i].class_id];
-            QString text = QString("%1  %2")
-                .arg(QString::fromStdString(name), -12).arg(detections[i].conf, 0, 'f', 3);
-            if (item->text() != text) { needRebuild = true; break; }
+            if (item->text() != detectionText(name, detections[i].conf)) { needRebuild = true; break; }
         }
     }
 
@@ -678,15 +659,8 @@ void MainWindow::updateDetectionList(const std::vector<Detection>& detections, d
 
             for (const auto& det : sorted) {
                 const auto& name = Config::CLASS_NAMES[det.class_id];
-                QString text = QString("%1  %2")
-                    .arg(QString::fromStdString(name), -12).arg(det.conf, 0, 'f', 3);
-                auto* item = new QListWidgetItem(text, ui->resultListWidget);
-                if (name.find("no_") == 0)
-                    item->setForeground(QColor("#d9534f"));
-                else if (name == "Person" || name == "none")
-                    item->setForeground(QColor("#888888"));
-                else
-                    item->setForeground(QColor("#5cb85c"));
+                auto* item = new QListWidgetItem(detectionText(name, det.conf), ui->resultListWidget);
+                item->setForeground(detectionColor(name));
             }
         }
     } else {
@@ -697,15 +671,8 @@ void MainWindow::updateDetectionList(const std::vector<Detection>& detections, d
         for (int i = 0; i < static_cast<int>(sorted.size()); ++i) {
             auto* item = ui->resultListWidget->item(i);
             const auto& name = Config::CLASS_NAMES[sorted[i].class_id];
-            QString text = QString("%1  %2")
-                .arg(QString::fromStdString(name), -12).arg(sorted[i].conf, 0, 'f', 3);
-            item->setText(text);
-            if (name.find("no_") == 0)
-                item->setForeground(QColor("#d9534f"));
-            else if (name == "Person" || name == "none")
-                item->setForeground(QColor("#888888"));
-            else
-                item->setForeground(QColor("#5cb85c"));
+            item->setText(detectionText(name, sorted[i].conf));
+            item->setForeground(detectionColor(name));
         }
     }
 

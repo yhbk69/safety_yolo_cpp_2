@@ -2,6 +2,7 @@
 #include "yolo_trt_engine.hpp"
 #include "preprocessor.hpp"
 #include "postprocessor.hpp"
+#include "config.hpp"
 
 #include <filesystem>
 #include <algorithm>
@@ -10,6 +11,18 @@
 namespace fs = std::filesystem;
 
 InferenceManager::InferenceManager() {
+}
+
+QString InferenceManager::formatClassSummary(const std::vector<Detection>& detections) {
+    if (detections.empty()) return {};
+    std::map<int, int> classCounts;
+    for (const auto& det : detections) classCounts[det.class_id]++;
+    QString detail;
+    for (const auto& [cid, cnt] : classCounts) {
+        if (!detail.isEmpty()) detail += ", ";
+        detail += QString("%1×%2").arg(cnt).arg(QString::fromStdString(Config::CLASS_NAMES[cid]));
+    }
+    return detail;
 }
 
 InferenceManager::ImageResult InferenceManager::processImage(

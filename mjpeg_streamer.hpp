@@ -17,6 +17,7 @@
 
 #include <QString>
 #include <QByteArray>
+#include <QImage>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QMutex>
@@ -31,6 +32,7 @@ public:
 
     void start(quint16 port, const QString& hostIp);
     void pushFrame(const QByteArray& jpegData);
+    void pushImage(const QImage& image, int quality = 60);
     void stop();
     int clientCount() const;
     void setLogCallback(std::function<void(const QString&, const QString&)> callback);
