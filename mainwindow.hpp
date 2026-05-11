@@ -19,6 +19,7 @@
 #include <QDesktopServices>
 #include <QSharedPointer>
 #include <QListWidget>
+#include <QPushButton>
 #include <QMenu>
 #include <atomic>
 #include <memory>
@@ -57,6 +58,7 @@ public:
     void onOpenVideo();
     void onOpenCamera(bool checked);
     void onAddCamera();
+    void onStartDetection();
     void onRemoveCamera(int cameraId);
     void onOpenFolder();
     void onBrowseModel();
@@ -107,6 +109,7 @@ private:
     QLabel* wsAddressLabel_;
 
     QListWidget* cameraListWidget_;
+    QPushButton* startDetectBtn_ = nullptr;
 
     // 日志输出函数
     void log(const QString& category, const QString& message);

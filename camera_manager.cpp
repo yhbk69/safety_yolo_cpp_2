@@ -66,31 +66,13 @@ QList<int> CameraManager::cameraIds() const {
  */
 void CameraManager::stop(int cameraId) {
     auto it = entries_.find(cameraId);
-    if (it == entries_.end()) { qDebug() << "[DEBUG] CameraManager::stop" << cameraId << "- not found"; return; }
+    if (it == entries_.end()) return;
 
-    qDebug() << "[DEBUG] CameraManager::stop" << cameraId << "- worker->stop()";
-    // 1. 通知 Worker 停止工作
+    // 设置停止标志, 不等待线程退出
+    // 工作线程会在下一轮循环检测到 running_ = false 后自然退出
     if (it->worker) it->worker->stop();
 
-    // 2. 等待线程自然退出 (不调用 terminate, 避免在 CUDA 推理中途杀死线程)
-    if (it->thread) {
-        it->thread->requestInterruption();
-        qDebug() << "[DEBUG] CameraManager::stop" << cameraId << "- waiting for thread...";
-        if (!it->thread->wait(5000)) {
-            qDebug() << "[DEBUG] CameraManager::stop" << cameraId << "- thread TIMEOUT, scheduling cleanup";
-            if (callbacks_.log) {
-                callbacks_.log("系统", QString("摄像头%1 线程未及时退出, 后台清理中").arg(cameraId));
-            }
-            // 断开信号槽, 计划删除worker和thread
-            it->worker->deleteLater();
-            it->thread->disconnect();
-            it->thread->deleteLater();
-            entries_.erase(it);
-            return;
-        }
-    }
-
-    qDebug() << "[DEBUG] CameraManager::stop" << cameraId << "- thread exited OK, erasing entry";
+    // 立即从管理器移除, 调用方更新 UI
     entries_.erase(it);
 }
 

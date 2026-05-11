@@ -27,6 +27,7 @@
 #include <QInputDialog>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QFormLayout>
 #include <QDebug>
 
 #include <filesystem>
@@ -78,12 +79,58 @@ MainWindow::MainWindow(QWidget *parent)
         }
     }
     connect(cameraListWidget_, &QListWidget::itemClicked, this, &MainWindow::onCameraListClicked);
+    // "开始检测" 按钮 (插入到 stopBtn 前)
+    {
+        auto* btnLayout = qobject_cast<QHBoxLayout*>(ui->buttonLayout);
+        if (btnLayout) {
+            startDetectBtn_ = new QPushButton(QString::fromUtf8("开始检测"), this);
+            startDetectBtn_->setStyleSheet(
+                "QPushButton { background-color: #5cb85c; color: white; font-weight: bold; padding: 6px 16px; }"
+                "QPushButton:disabled { background-color: #555; color: #888; }");
+            startDetectBtn_->setEnabled(false);
+            // 找到 stopBtn 的位置, 插入到它前面
+            int stopIdx = btnLayout->indexOf(ui->stopBtn);
+            if (stopIdx >= 0)
+                btnLayout->insertWidget(stopIdx, startDetectBtn_);
+            else
+                btnLayout->addWidget(startDetectBtn_);
+            connect(startDetectBtn_, &QPushButton::clicked, this, &MainWindow::onStartDetection);
+        }
+    }
+
     connect(cameraListWidget_, &QListWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
         auto* item = cameraListWidget_->itemAt(pos);
         if (!item) return;
         int camId = item->data(Qt::UserRole).toInt();
         qDebug() << "[DEBUG] context menu for cam" << camId;
         QMenu menu;
+        menu.addAction(QString::fromUtf8("[摄像头%1]").arg(camId))->setEnabled(false);
+        auto* aliasAction = menu.addAction(QString::fromUtf8("设置别名"));
+        connect(aliasAction, &QAction::triggered, this, [this, camId]() {
+            QString oldAlias = cameraAliases_.count(camId) ? cameraAliases_[camId] : QString();
+            bool ok = false;
+            QString label = cameraAliases_.count(camId)
+                ? QString::fromUtf8("当前别名: %1\n\n输入新别名:").arg(oldAlias)
+                : QString::fromUtf8("为此摄像头设置别名:");
+            QString newAlias = QInputDialog::getText(this,
+                QString::fromUtf8("设置别名 - 摄像头 %1").arg(camId),
+                label, QLineEdit::Normal, oldAlias, &ok);
+            if (!ok) return;
+            cameraAliases_[camId] = newAlias;
+            // 同步到配置文件
+            auto& cfg = RuntimeConfig::instance();
+            auto cams = cfg.cameras();
+            QString src = cameraSources_.count(camId) ? cameraSources_[camId] : QString();
+            for (auto& cam : cams) {
+                if (cam.source == src) {
+                    cam.alias = newAlias;
+                    break;
+                }
+            }
+            cfg.setCameras(cams);
+            cfg.saveToFile(cfg.configFilePath());
+            refreshCameraList();
+        });
         auto* removeAction = menu.addAction(QString::fromUtf8("移除摄像头 %1").arg(camId));
         connect(removeAction, &QAction::triggered, this, [this, camId]() {
             qDebug() << "[DEBUG] remove action triggered for cam" << camId;
@@ -296,6 +343,8 @@ void MainWindow::onLoadModel() {
         enableControls(true);
         updateModelButtons(false);
         autoStartCameras();
+        // 模型加载完成: 如果有摄像头在运行则按钮已禁用, 否则启用
+        if (startDetectBtn_) startDetectBtn_->setEnabled(cameraManager_->isEmpty());
     } else {
         ui->modelStatusLabel->setText("✗ 加载失败");
         ui->modelStatusLabel->setStyleSheet("color: red; font-weight: bold;");
@@ -395,6 +444,7 @@ void MainWindow::onOpenVideo() {
     enableControls(false);
     ui->cameraBtn->setChecked(false);
     ui->stopBtn->setEnabled(true);
+    if (startDetectBtn_) startDetectBtn_->setEnabled(false);
     isProcessing_ = true;
     activeDisplayCamera_ = -1;
     updateModelButtons(true);
@@ -420,6 +470,7 @@ void MainWindow::onOpenCamera(bool checked) {
         activeDisplayCamera_ = 0;
 
         updateModelButtons(true);
+        if (startDetectBtn_) startDetectBtn_->setEnabled(false);
         startCameraWorker(0, "camera_0", "");
         refreshCameraList();
 
@@ -442,20 +493,29 @@ void MainWindow::onAddCamera() {
         return;
     }
 
-    // 弹出对话框: 输入摄像头设备ID或RTSP地址
-    bool ok = false;
-    QString source = QInputDialog::getText(this,
-        QString::fromUtf8("添加摄像头 - 视频源"),
-        QString::fromUtf8("输入摄像头设备ID(0,1,2...)或RTSP地址:"),
-        QLineEdit::Normal, "", &ok);
-    if (!ok || source.isEmpty()) return;
+    // 自定义对话框: 源地址 + 别名 合并到一个界面
+    QDialog dlg(this);
+    dlg.setWindowTitle(QString::fromUtf8("添加摄像头"));
+    dlg.setMinimumWidth(420);
+    auto* layout = new QFormLayout(&dlg);
+    auto* srcEdit = new QLineEdit(&dlg);
+    srcEdit->setPlaceholderText("摄像头设备ID(0,1,2...) 或 RTSP 地址");
+    auto* aliasEdit = new QLineEdit(&dlg);
+    aliasEdit->setPlaceholderText("可选, 留空则使用源地址");
+    auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    layout->addRow(QString::fromUtf8("视频源:"), srcEdit);
+    layout->addRow(QString::fromUtf8("别名:"), aliasEdit);
+    layout->addRow(btnBox);
+    connect(btnBox, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
-    // 别名(可选)
-    QString alias = QInputDialog::getText(this,
-        QString::fromUtf8("添加摄像头 - 别名"),
-        QString::fromUtf8("为此摄像头设置别名(便于识别), 留空使用源地址:"),
-        QLineEdit::Normal, QString(), &ok);
-    if (!ok || alias.trimmed().isEmpty()) alias = source;
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    QString source = srcEdit->text().trimmed();
+    if (source.isEmpty()) return;
+
+    QString alias = aliasEdit->text().trimmed();
+    if (alias.isEmpty()) alias = source;
 
     int camId = cameraManager_->allocateId();
     QString camName = QString("camera_%1").arg(camId);
@@ -477,6 +537,7 @@ void MainWindow::onAddCamera() {
     ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
     ui->cameraStatusLabel->setText(QString::fromUtf8("● %1路运行").arg(cameraManager_->count()));
     ui->stopBtn->setEnabled(true);
+    if (startDetectBtn_) startDetectBtn_->setEnabled(false);
 
     refreshCameraList();
 
@@ -487,9 +548,42 @@ void MainWindow::onAddCamera() {
     });
 }
 
+void MainWindow::onStartDetection() {
+    qDebug() << "[DEBUG] onStartDetection";
+    if (!modelManager_->isLoaded()) {
+        QMessageBox::warning(this, QString::fromUtf8("提示"), QString::fromUtf8("请先加载模型"));
+        return;
+    }
+    auto& cfg = RuntimeConfig::instance();
+    auto cams = cfg.cameras();
+    if (cams.empty()) {
+        QMessageBox::information(this, QString::fromUtf8("提示"),
+            QString::fromUtf8("没有已保存的摄像头, 请先使用添加摄像头按钮添加"));
+        return;
+    }
+    autoStartCameras();
+    ui->stopBtn->setEnabled(true);
+    startDetectBtn_->setEnabled(false);
+    statusMessageLabel_->setText(QString::fromUtf8("检测运行中..."));
+}
+
 void MainWindow::onRemoveCamera(int cameraId) {
     qDebug() << "[DEBUG] onRemoveCamera" << cameraId;
+    // 先保存source(后面stopCamera会清空)
+    QString src = cameraSources_.count(cameraId) ? cameraSources_[cameraId] : QString();
     stopCamera(cameraId);
+
+    // 从配置文件删除该摄像头
+    auto& cfg = RuntimeConfig::instance();
+    auto cams = cfg.cameras();
+    for (size_t i = 0; i < cams.size(); ++i) {
+        if (cams[i].source == src) {
+            cfg.removeCamera(static_cast<int>(i));
+            break;
+        }
+    }
+    cfg.saveToFile(cfg.configFilePath());
+
     qDebug() << "[DEBUG] onRemoveCamera done" << cameraId;
 }
 
@@ -519,6 +613,7 @@ void MainWindow::stopCamera(int cameraId) {
         ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px;");
         ui->cameraStatusLabel->setText(QString::fromUtf8("⏹ 未开启"));
         ui->stopBtn->setEnabled(false);
+        if (startDetectBtn_) startDetectBtn_->setEnabled(modelManager_->isLoaded());
         fpsLabel_->setText("FPS: --");
     } else {
         ui->cameraStatusLabel->setText(QString::fromUtf8("● %1路运行").arg(cameraManager_->count()));
@@ -570,6 +665,7 @@ void MainWindow::autoStartCameras() {
     ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
     ui->cameraStatusLabel->setText(QString("● %1路运行").arg(cameraManager_->count()));
     ui->stopBtn->setEnabled(true);
+    if (startDetectBtn_) startDetectBtn_->setEnabled(false);
     updateModelButtons(true);
     GuiLogger::log(ui->logTextEdit, "系统", QString("自动启动完成, 当前 %1 路摄像头").arg(cameraManager_->count()));
     refreshCameraList();
@@ -680,9 +776,10 @@ void MainWindow::startCameraWorker(int cameraId, const QString& name, const QStr
     connect(worker, &InferenceWorker::alertSaved, this, &MainWindow::onAlertSaved);
     connect(worker, &InferenceWorker::finished, this, &MainWindow::onWorkerFinished);
     connect(worker, &InferenceWorker::errorOccurred, this, &MainWindow::onWorkerError);
-    connect(thread, &QThread::started, worker, [this, worker, source, cameraId, ct = confThreshold_, nt = nmsThreshold_]() {
+    connect(thread, &QThread::started, worker, [this, worker, thread, source, cameraId, ct = confThreshold_, nt = nmsThreshold_]() {
         worker->setBatchInference(ui->batchInferenceCheck->isChecked());
         worker->process(std::make_unique<CameraVideoSource>(cameraId, source), ct, nt);
+        thread->quit();
     });
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
 
@@ -702,10 +799,11 @@ void MainWindow::startVideoWorker(const QString& filePath) {
     connect(worker, &InferenceWorker::errorOccurred, this, [this](int, const QString& msg) {
         QMessageBox::critical(this, QString::fromUtf8("处理错误"), msg);
     });
-    connect(thread, &QThread::started, worker, [this, worker, filePath]() {
+    connect(thread, &QThread::started, worker, [this, worker, thread, filePath]() {
         worker->setBatchInference(ui->batchInferenceCheck->isChecked());
         worker->process(std::make_unique<FileVideoSource>(filePath),
                         confThreshold_, nmsThreshold_);
+        thread->quit();
     });
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
 
@@ -751,6 +849,7 @@ void MainWindow::onStopProcessing() {
     enableControls(true);
     updateModelButtons(false);
     ui->stopBtn->setEnabled(false);
+    if (startDetectBtn_) startDetectBtn_->setEnabled(modelManager_->isLoaded());
     fpsLabel_->setText("FPS: --");
     statusMessageLabel_->setText(QString::fromUtf8("已停止"));
     GuiLogger::log(ui->logTextEdit, "系统", "所有处理已停止");
@@ -814,6 +913,7 @@ void MainWindow::onWorkerFinished(int cameraId) {
         enableControls(true);
         updateModelButtons(false);
         ui->stopBtn->setEnabled(false);
+        if (startDetectBtn_) startDetectBtn_->setEnabled(modelManager_->isLoaded());
         fpsLabel_->setText("FPS: --");
         statusMessageLabel_->setText("处理完成");
     }

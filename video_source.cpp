@@ -31,10 +31,18 @@ CameraVideoSource::CameraVideoSource(int cameraId, const QString& source) {
 }
 
 CameraVideoSource::~CameraVideoSource() {
-    if (cap_.isOpened()) cap_.release();
+    close();
+}
+
+void CameraVideoSource::close() {
+    std::lock_guard<std::mutex> lock(capMutex_);
+    if (cap_.isOpened()) {
+        cap_.release();
+    }
 }
 
 bool CameraVideoSource::readFrame(cv::Mat& frame) {
+    std::lock_guard<std::mutex> lock(capMutex_);
     if (!cap_.isOpened()) return false;
     return cap_.read(frame);
 }
@@ -50,10 +58,12 @@ FileVideoSource::FileVideoSource(const QString& filePath)
 }
 
 FileVideoSource::~FileVideoSource() {
+    std::lock_guard<std::mutex> lock(capMutex_);
     if (cap_.isOpened()) cap_.release();
 }
 
 bool FileVideoSource::readFrame(cv::Mat& frame) {
+    std::lock_guard<std::mutex> lock(capMutex_);
     if (!cap_.isOpened()) return false;
     return cap_.read(frame);
 }

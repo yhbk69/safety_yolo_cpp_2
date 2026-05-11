@@ -11,6 +11,7 @@
 
 #include <QString>
 #include <opencv2/opencv.hpp>
+#include <mutex>
 
 class IVideoSource {
 public:
@@ -19,6 +20,8 @@ public:
     virtual QString name() const = 0;
     virtual int frameDelayMs() const = 0;
     virtual bool isLive() const { return false; }
+    /// 关闭视频源, 解除 readFrame 阻塞, 线程安全
+    virtual void close() {}
 };
 
 class CameraVideoSource : public IVideoSource {
@@ -29,9 +32,11 @@ public:
     bool readFrame(cv::Mat& frame) override;
     QString name() const override { return name_; }
     int frameDelayMs() const override { return 0; }  // 实时源无需额外延迟
-    bool isLive() const { return true; }
+    bool isLive() const override { return true; }
+    void close() override;
 
 private:
+    std::mutex capMutex_;
     cv::VideoCapture cap_;
     QString name_;
 };
@@ -46,6 +51,7 @@ public:
     int frameDelayMs() const override { return 0; }
 
 private:
+    std::mutex capMutex_;
     cv::VideoCapture cap_;
     QString name_;
 };
