@@ -193,29 +193,6 @@ void MainWindow::setupConnections() {
 }
 
 // ============================================================
-// WebSocket 服务器
-
-
-
-
-
-// ============================================================
-// WebSocket 消息处理 - 同步请求
-// ============================================================
-
-// ============================================================
-// WebSocket 消息处理 - 获取摄像头列表
-// ============================================================
-
-// ============================================================
-// WebSocket 消息处理 - 设置围栏
-// ============================================================
-
-// ============================================================
-// WebSocket 消息处理 - 查看实时视频流
-// ============================================================
-
-// ============================================================
 // 告警处理
 // ============================================================
 void MainWindow::onAlertSaved(int cameraId, const QString& videoPath, const QString& imagePath,
@@ -416,22 +393,7 @@ void MainWindow::onOpenCamera(bool checked) {
         ui->cameraStatusLabel->setText(QString::fromUtf8("● 已开启"));
         activeDisplayCamera_ = 0;
 
-        auto* thread = new QThread(this);
-        auto* worker = new InferenceWorker(modelManager_->engine(), 0, "camera_0");
-        worker->moveToThread(thread);
-
-        connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
-        connect(worker, &InferenceWorker::alertSaved, this, &MainWindow::onAlertSaved);
-        connect(worker, &InferenceWorker::finished, this, &MainWindow::onWorkerFinished);
-        connect(worker, &InferenceWorker::errorOccurred, this, &MainWindow::onWorkerError);
-        connect(thread, &QThread::started, worker, [this, worker]() {
-            worker->setBatchInference(ui->batchInferenceCheck->isChecked());
-            worker->processCamera(confThreshold_, nmsThreshold_);
-        });
-        connect(thread, &QThread::finished, worker, &QObject::deleteLater);
-
-        cameraManager_->add(0, thread, worker);
-        thread->start();
+        startCameraWorker(0, "camera_0", "", &InferenceWorker::processCamera);
 
         // 自动开始录制
         QTimer::singleShot(500, this, [this]() {
@@ -466,22 +428,7 @@ void MainWindow::onAddCamera() {
     GuiLogger::log(ui->logTextEdit, "检测", QString("添加摄像头 %1: %2").arg(camId).arg(source));
     activeDisplayCamera_ = camId;
 
-    auto* thread = new QThread(this);
-    auto* worker = new InferenceWorker(modelManager_->engine(), camId, camName, source);
-    worker->moveToThread(thread);
-
-    connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
-    connect(worker, &InferenceWorker::alertSaved, this, &MainWindow::onAlertSaved);
-    connect(worker, &InferenceWorker::finished, this, &MainWindow::onWorkerFinished);
-    connect(worker, &InferenceWorker::errorOccurred, this, &MainWindow::onWorkerError);
-    connect(thread, &QThread::started, worker, [this, worker]() {
-        worker->setBatchInference(ui->batchInferenceCheck->isChecked());
-        worker->processSource(confThreshold_, nmsThreshold_);
-    });
-    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
-
-    cameraManager_->add(camId, thread, worker);
-    thread->start();
+    startCameraWorker(camId, camName, source, &InferenceWorker::processSource);
 
     // 更新摄像头状态显示
     ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
@@ -537,6 +484,26 @@ void MainWindow::stopAllCameras() {
     for (int id : ids) {
         stopCamera(id);
     }
+}
+
+void MainWindow::startCameraWorker(int cameraId, const QString& name, const QString& source,
+                                    void (InferenceWorker::*processFn)(float, float)) {
+    auto* thread = new QThread(this);
+    auto* worker = new InferenceWorker(modelManager_->engine(), cameraId, name, source);
+    worker->moveToThread(thread);
+
+    connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
+    connect(worker, &InferenceWorker::alertSaved, this, &MainWindow::onAlertSaved);
+    connect(worker, &InferenceWorker::finished, this, &MainWindow::onWorkerFinished);
+    connect(worker, &InferenceWorker::errorOccurred, this, &MainWindow::onWorkerError);
+    connect(thread, &QThread::started, worker, [this, worker, processFn]() {
+        worker->setBatchInference(ui->batchInferenceCheck->isChecked());
+        (worker->*processFn)(confThreshold_, nmsThreshold_);
+    });
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+
+    cameraManager_->add(cameraId, thread, worker);
+    thread->start();
 }
 
 void MainWindow::onOpenFolder() {
@@ -895,19 +862,6 @@ void MainWindow::onSettings() {
 // 工具方法
 // ============================================================
 QString MainWindow::getHostIp() {
-    // 优先获取非回环的IPv4地址
-    //const auto interfaces = QNetworkInterface::allInterfaces();
-    //for (const auto& iface : interfaces) {
-    //    if (iface.flags() & QNetworkInterface::IsLoopBack) continue;
-    //    if (!(iface.flags() & QNetworkInterface::IsUp)) continue;
-    //    if (!(iface.flags() & QNetworkInterface::IsRunning)) continue;
-    //    for (const auto& addr : iface.addressEntries()) {
-    //        if (addr.ip().protocol() == QAbstractSocket::IPv4Protocol &&
-    //            addr.ip() != QHostAddress::LocalHost) {
-    //            return addr.ip().toString();
-    //        }
-    //    }
-    //}
     // 回退到配置文件中的IP
     return QString::fromStdString(Config::HOST_IP);
 }
