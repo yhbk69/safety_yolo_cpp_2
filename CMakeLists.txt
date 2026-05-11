@@ -57,6 +57,13 @@ set(SOURCES
     inference_worker.cpp
     http_file_server.cpp
     video_source.cpp
+    camera_manager.cpp
+    model_manager.cpp
+    settings_dialog.cpp
+    mjpeg_streamer.cpp
+    video_recorder.cpp
+    websocket_manager.cpp
+    inference_manager.cpp
     mainwindow.ui        # Qt UI 布局文件(由 Qt Creator 可视化编辑)
 )
 
@@ -74,6 +81,15 @@ set(HEADERS
     http_file_server.hpp
     video_source.hpp
     output_sink.hpp
+    camera_manager.hpp
+    detection_utils.hpp
+    inference_manager.hpp
+    model_manager.hpp
+    runtime_config.hpp
+    settings_dialog.hpp
+    video_recorder.hpp
+    websocket_manager.hpp
+    rknn_inference_engine.hpp
 )
 
 # ============ 生成可执行文件 ============

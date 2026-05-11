@@ -16,13 +16,17 @@
 #include <QApplication>
 #include <QDir>
 #include <QTextCodec>
+#ifdef _WIN32
 #include <Windows.h>
+#endif
 #include "mainwindow.hpp"
 #include "types.hpp"
 
 int main(int argc, char *argv[]) {
+#ifdef _WIN32
     // Windows UTF-8 控制台支持
     SetConsoleOutputCP(CP_UTF8);
+#endif
     QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
     // 注册自定义类型用于跨线程信号槽
     qRegisterMetaType<Detection>("Detection");

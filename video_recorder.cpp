@@ -101,8 +101,8 @@ bool VideoRecorder::stopRecording(int cameraId) {
     QString startTimeStr = session->startTime.toString("HHmmss");
     QString endTimeStr = endTime.toString("HHmmss");
     QString oldPath = session->videoPath;
-    QString newPath = oldPath;
-    newPath.replace(".mp4", "-" + endTimeStr + ".mp4");
+    QFileInfo fi(oldPath);
+    QString newPath = fi.absolutePath() + "/" + fi.completeBaseName() + "-" + endTimeStr + ".mp4";
 
     if (QFile::exists(oldPath)) {
         QFile::rename(oldPath, newPath);

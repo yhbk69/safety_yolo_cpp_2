@@ -13,14 +13,18 @@ CameraVideoSource::CameraVideoSource(int cameraId, const QString& source) {
     if (!source.isEmpty() && source.startsWith("rtsp://")) {
         name_ = source;
         cap_.open(source.toStdString());
-    } else if (!source.isEmpty()) {
-        bool ok = false;
-        int devId = source.toInt(&ok);
-        name_ = QString("camera_%1").arg(ok ? devId : cameraId);
-        cap_.open(ok ? devId : cameraId, cv::CAP_DSHOW);
     } else {
-        name_ = QString("camera_%1").arg(cameraId);
-        cap_.open(cameraId, cv::CAP_DSHOW);
+        bool ok = false;
+        int devId = source.isEmpty() ? cameraId : source.toInt(&ok);
+        name_ = QString("camera_%1").arg(ok ? devId : cameraId);
+#ifdef _WIN32
+        cap_.open(ok ? devId : cameraId, cv::CAP_DSHOW);
+#else
+        cap_.open(ok ? devId : cameraId);
+#endif
+    }
+    if (cap_.isOpened()) {
+        cap_.set(cv::CAP_PROP_BUFFERSIZE, 1);
     }
 }
 
@@ -30,7 +34,6 @@ CameraVideoSource::~CameraVideoSource() {
 
 bool CameraVideoSource::readFrame(cv::Mat& frame) {
     if (!cap_.isOpened()) return false;
-    cap_.set(cv::CAP_PROP_BUFFERSIZE, 1);
     return cap_.read(frame);
 }
 

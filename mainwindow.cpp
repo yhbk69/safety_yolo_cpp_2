@@ -579,8 +579,8 @@ void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detect
         double fps = 1000.0 / elapsedMs;
         fpsLabel_->setText(QString("FPS: %1").arg(fps, 0, 'f', 1));
     }
-    // 每5帧输出一次检测详情日志
-    static int logFrameCount = 0;
+    // 每5帧输出一次检测详情日志(按摄像头独立计数)
+    int& logFrameCount = logFrameCounts_[cameraId];
     if (++logFrameCount % 5 == 0 && !detections.empty()) {
         double fps = (elapsedMs > 0) ? 1000.0 / elapsedMs : 0;
         GuiLogger::log(ui->logTextEdit, "检测", QString("%1 | %2 | %3ms, FPS:%4")

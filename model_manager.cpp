@@ -5,7 +5,11 @@
 
 #include "model_manager.hpp"
 #include "yolo_trt_engine.hpp"
+// TODO: RKNN 引擎头文件, 当前 rknn_inference_engine.hpp 存在编译问题
+// (rknn_context 前向声明+0初始化, Preprocessor 为命名空间而非类)
+// #include "rknn_inference_engine.hpp"
 #include <QString>
+#include <QFileInfo>
 
 ModelManager::ModelManager()
     : engine_(nullptr)
@@ -14,7 +18,24 @@ ModelManager::ModelManager()
 
 bool ModelManager::load(const std::string& path) {
     try {
-        auto eng = std::make_unique<YoloTrtEngine>();
+        std::unique_ptr<IEngine> eng;
+
+        QString lower = QFileInfo(QString::fromStdString(path)).suffix().toLower();
+        if (lower == "engine") {
+            eng = std::make_unique<YoloTrtEngine>();
+        } else if (lower == "rknn") {
+            // eng = std::make_unique<RknnInferenceEngine>();
+            if (callbacks_.onError) {
+                callbacks_.onError("RKNN 引擎暂未启用, 回退到 TensorRT");
+            }
+            eng = std::make_unique<YoloTrtEngine>();
+        } else {
+            if (callbacks_.log) {
+                callbacks_.log("模型", QString("未知模型格式(%1), 默认使用 TensorRT 引擎").arg(lower));
+            }
+            eng = std::make_unique<YoloTrtEngine>();
+        }
+
         eng->load(path);
         engine_ = std::move(eng);
         if (callbacks_.log) {

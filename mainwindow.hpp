@@ -20,6 +20,7 @@
 #include <QSharedPointer>
 #include <atomic>
 #include <memory>
+#include <unordered_map>
 
 #include <opencv2/opencv.hpp>
 
@@ -123,6 +124,7 @@ private:
     bool isProcessing_ = false;  // 视频模式用
     float confThreshold_;
     float nmsThreshold_;
+    std::unordered_map<int, int> logFrameCounts_;
 };
 
 #endif // MAINWINDOW_HPP
