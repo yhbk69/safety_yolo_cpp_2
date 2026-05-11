@@ -819,10 +819,4 @@ void MainWindow::onSettings() {
     }
 }
 
-// ============================================================
-// 工具方法
-// ============================================================
-QString MainWindow::getHostIp() {
-    // 回退到配置文件中的IP
-    return QString::fromStdString(Config::HOST_IP);
-}
+

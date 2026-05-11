@@ -55,7 +55,10 @@ namespace Config {
     // Letterbox填充颜色(BGR格式). 默认灰色(114,114,114), 与YOLO训练时一致
     const cv::Scalar LETTERBOX_FILL_COLOR = cv::Scalar(114, 114, 114);
 
-    // ============ WebSocket 告警推送配置 ============
+    // ============================================================
+    // 以下为运行时可调参数, 默认值以 RuntimeConfig 为准,
+    // 此处仅提供编译期访问便利, 修改时请同步更新 RuntimeConfig。
+    // ============================================================
 
     // WebSocket 服务端口
     constexpr int WEBSOCKET_PORT = 9090;
@@ -81,7 +84,9 @@ namespace Config {
     // 同一类别告警最小间隔(毫秒)
     constexpr int ALERT_COOLDOWN_MS = 10000;
 
-    // ====== 视频录制配置 ======
+    // ============================================================
+    // 视频录制配置 — 默认值以 RuntimeConfig 为准
+    // ============================================================
     // 默认录像保存根目录
     constexpr const char* RECORD_DIR = "recordings";
 

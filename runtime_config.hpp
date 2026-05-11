@@ -1,9 +1,15 @@
 /**
  * @file runtime_config.hpp
- * @brief 运行时可变配置 - 从JSON文件加载, 支持热重载
+ * @brief 运行时可变配置 — 运行时默认值的单一来源
  *
- * 编译时常量(INPUT_WIDTH/HEIGHT, NUM_CLASSES, BATCH_SIZE等)留在config.hpp
- * 运行时可变参数(阈值、端口、冷却时间等)移到这里
+ * 所有运行时可调的参数（阈值、端口、冷却时间、路径等）的**默认值**
+ * 仅在此处定义，SettingsDialog 从此处读取，Config 命名空间同步引用。
+ *
+ * 新增可调参数时：
+ *   1. 在此文件添加成员变量 + getter/setter
+ *   2. 在 toJson() / applyJson() 中添加序列化
+ *   3. 在 Config 命名空间添加同名 constexpr（如需编译期访问）
+ *   4. 在 SettingsDialog 中添加 UI 控件
  */
 
 #ifndef RUNTIME_CONFIG_HPP

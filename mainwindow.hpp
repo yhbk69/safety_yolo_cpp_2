@@ -55,9 +55,7 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
 
-    static QString getHostIp();
-
-private slots:
+    private slots:
     void onOpenImage();
     void onOpenVideo();
     void onOpenCamera(bool checked);

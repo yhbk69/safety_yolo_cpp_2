@@ -9,14 +9,14 @@ class QSpinBox;
 class QLineEdit;
 
 struct SettingsResult {
-    float confThreshold = 0.5f;
-    float nmsThreshold = 0.45f;
-    int websocketPort = 8765;
-    int httpPort = 8080;
-    int streamPort = 9090;
-    int ackTimeoutMs = 5000;
-    int alertCooldownMs = 3000;
-    int ringBufferFrames = 150;
+    float confThreshold{};
+    float nmsThreshold{};
+    int websocketPort{};
+    int httpPort{};
+    int streamPort{};
+    int ackTimeoutMs{};
+    int alertCooldownMs{};
+    int ringBufferFrames{};
     QString modelPath;
     QString outputDir;
     QString recordDir;
