@@ -28,7 +28,7 @@
 
 #include <opencv2/opencv.hpp>
 
-#include "yolo_trt_engine.hpp"
+#include "inference_engine.hpp"
 #include "preprocessor.hpp"
 #include "postprocessor.hpp"
 #include "types.hpp"
@@ -40,7 +40,7 @@ class InferenceWorker : public QObject {
     Q_OBJECT
 
 public:
-    explicit InferenceWorker(YoloTrtEngine* engine, int cameraId = 0,
+    explicit InferenceWorker(IEngine* engine, int cameraId = 0,
                              const QString& cameraName = "camera_0",
                              const QString& source = "");
     ~InferenceWorker() override = default;
@@ -72,7 +72,7 @@ private:
     void checkAlert(const std::vector<Detection>& detections, const std::shared_ptr<cv::Mat>& annotatedFrame);
     void saveAlertFiles(const QString& alarmId, const QString& alarmType);
 
-    YoloTrtEngine* engine_;
+    IEngine* engine_;
     int cameraId_;
     QString cameraName_;
     /** 视频源: 数字=设备ID, rtsp://=RTSP流, 空=使用cameraId_ */

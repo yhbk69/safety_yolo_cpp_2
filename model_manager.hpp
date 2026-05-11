@@ -12,7 +12,7 @@
 #include <memory>
 #include <string>
 #include <functional>
-#include "yolo_trt_engine.hpp"
+#include "inference_engine.hpp"
 
 class ModelManager {
 public:
@@ -28,23 +28,23 @@ public:
 
     /**
      * @brief 加载模型
-     * @param path engine 文件路径
+     * @param path 模型文件路径 (各后端对应 .engine / .rknn / .onnx 等)
      * @return 成功返回 true
      */
     bool load(const std::string& path);
 
     /**
      * @brief 热切换模型
-     * @param path 新的 engine 文件路径
+     * @param path 新的模型文件路径
      * @return 成功返回 true
      */
     bool reload(const std::string& path);
 
     bool isLoaded() const { return engine_ != nullptr; }
-    YoloTrtEngine* engine() const { return engine_.get(); }
+    IEngine* engine() const { return engine_.get(); }
 
 private:
-    std::unique_ptr<YoloTrtEngine> engine_;
+    std::unique_ptr<IEngine> engine_;
     Callbacks callbacks_;
 };
 

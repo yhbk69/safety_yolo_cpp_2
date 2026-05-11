@@ -245,6 +245,7 @@
     <ClInclude Include="detection_utils.hpp" />
     <ClInclude Include="gui_logger.hpp" />
     <ClInclude Include="http_file_server.hpp" />
+    <ClInclude Include="inference_engine.hpp" />
     <ClInclude Include="inference_manager.hpp" />
     <ClInclude Include="inference_runner.hpp" />
     <ClInclude Include="inference_worker.hpp" />

@@ -1,5 +1,5 @@
 #include "inference_manager.hpp"
-#include "yolo_trt_engine.hpp"
+#include "inference_engine.hpp"
 #include "preprocessor.hpp"
 #include "postprocessor.hpp"
 #include "config.hpp"
@@ -26,7 +26,7 @@ QString InferenceManager::formatClassSummary(const std::vector<Detection>& detec
 }
 
 InferenceManager::ImageResult InferenceManager::processImage(
-    YoloTrtEngine* engine,
+    IEngine* engine,
     const cv::Mat& imageBgr,
     float confThreshold,
     float nmsThreshold)
@@ -65,7 +65,7 @@ InferenceManager::ImageResult InferenceManager::processImage(
 }
 
 InferenceManager::FolderResult InferenceManager::processFolder(
-    YoloTrtEngine* engine,
+    IEngine* engine,
     const std::string& dirPath,
     float confThreshold,
     float nmsThreshold,

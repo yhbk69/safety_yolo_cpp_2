@@ -68,6 +68,7 @@ set(HEADERS
     preprocessor.hpp
     postprocessor.hpp
     yolo_trt_engine.hpp
+    inference_engine.hpp
     inference_runner.hpp
     inference_worker.hpp
     http_file_server.hpp

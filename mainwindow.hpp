@@ -32,7 +32,7 @@
 #include "gui_logger.hpp"
 #include "mjpeg_streamer.hpp"
 #include "websocket_manager.hpp"
-#include "yolo_trt_engine.hpp"
+#include "inference_engine.hpp"
 #include "inference_worker.hpp"
 #include "http_file_server.hpp"
 #include "inference_manager.hpp"

@@ -4,6 +4,7 @@
  */
 
 #include "model_manager.hpp"
+#include "yolo_trt_engine.hpp"
 #include <QString>
 
 ModelManager::ModelManager()
@@ -13,7 +14,9 @@ ModelManager::ModelManager()
 
 bool ModelManager::load(const std::string& path) {
     try {
-        engine_ = std::make_unique<YoloTrtEngine>(path);
+        auto eng = std::make_unique<YoloTrtEngine>();
+        eng->load(path);
+        engine_ = std::move(eng);
         if (callbacks_.log) {
             callbacks_.log("模型", QString("模型加载成功: %1").arg(QString::fromStdString(path)));
         }

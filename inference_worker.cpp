@@ -13,7 +13,7 @@
 #include <QBuffer>
 #include <QThread>
 
-InferenceWorker::InferenceWorker(YoloTrtEngine* engine, int cameraId,
+InferenceWorker::InferenceWorker(IEngine* engine, int cameraId,
                                      const QString& cameraName,
                                      const QString& source)
     : engine_(engine)
@@ -122,7 +122,7 @@ InferenceWorker::FrameResult InferenceWorker::processOneFrame(
 
         if (batchCounter_ >= Config::BATCH_SIZE) {
             std::vector<std::vector<Detection>> batchDetections;
-            engine_->batchInfer(batchTensors_, batchDetections, batchImgSizes_,
+               engine_->batchInfer(batchTensors_, batchDetections, batchImgSizes_,
                                confThresh, nmsThresh);
             if (!batchDetections.empty()) {
                 detections = std::move(batchDetections.back());

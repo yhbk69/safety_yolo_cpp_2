@@ -8,7 +8,7 @@
 #include <QString>
 #include "types.hpp"
 
-class YoloTrtEngine;
+class IEngine;
 
 class InferenceManager {
 public:
@@ -34,7 +34,7 @@ public:
         QString errorMsg;
     };
 
-    ImageResult processImage(YoloTrtEngine* engine,
+    ImageResult processImage(IEngine* engine,
                              const cv::Mat& imageBgr,
                              float confThreshold,
                              float nmsThreshold);
@@ -45,7 +45,7 @@ public:
         int total = 0;
     };
 
-    FolderResult processFolder(YoloTrtEngine* engine,
+    FolderResult processFolder(IEngine* engine,
                                const std::string& dirPath,
                                float confThreshold,
                                float nmsThreshold,

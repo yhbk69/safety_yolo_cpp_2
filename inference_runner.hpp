@@ -30,14 +30,18 @@
 #include "types.hpp"
 #include "preprocessor.hpp"
 #include "postprocessor.hpp"
+#include "inference_engine.hpp"
 #include "yolo_trt_engine.hpp"
 
 namespace fs = std::filesystem;
 
 class InferenceRunner {
 public:
-    explicit InferenceRunner(const std::string& modelPath)
-        : engine_(modelPath) {}
+    explicit InferenceRunner(const std::string& modelPath) {
+        auto eng = std::make_unique<YoloTrtEngine>();
+        eng->load(modelPath);
+        engine_ = std::move(eng);
+    }
 
     void runImage(const std::string& imgPath) {
         cv::Mat img = cv::imread(imgPath);
@@ -48,7 +52,7 @@ public:
 
         auto tensor = Preprocessor::imageToTensor(Preprocessor::letterbox(img));
         std::vector<Detection> detections;
-        engine_.infer(tensor, detections, img.cols, img.rows);
+        engine_->infer(tensor, detections, img.cols, img.rows);
 
         std::cout << "[Runner] Detected " << detections.size() << " objects" << std::endl;
         Postprocessor::drawDetections(img, detections);
@@ -149,7 +153,7 @@ private:
         }
     }
 
-    YoloTrtEngine engine_;
+    std::unique_ptr<IEngine> engine_;
 };
 
 #endif // INFERENCE_RUNNER_HPP
