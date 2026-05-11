@@ -161,6 +161,7 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     if (fs::exists(Config::MODEL_PATH)) onLoadModel();
+    updateModelButtons(false);
 
     ui->batchInferenceCheck->setChecked(Config::USE_BATCH_INFERENCE);
 
@@ -232,6 +233,11 @@ void MainWindow::onBrowseModel() {
 }
 
 void MainWindow::onLoadModel() {
+    if (isDetecting()) {
+        GuiLogger::log(ui->logTextEdit, "系统", "检测进行中, 无法加载模型");
+        statusMessageLabel_->setText("请先停止检测后再加载模型");
+        return;
+    }
     QString modelPath = ui->modelPathEdit->text().trimmed();
     if (modelPath.isEmpty()) {
         QMessageBox::warning(this, "警告", "请先选择模型文件路径");
@@ -254,7 +260,7 @@ void MainWindow::onLoadModel() {
         statusMessageLabel_->setText("模型加载成功, 可以开始检测");
         GuiLogger::log(ui->logTextEdit, "模型", QString("模型加载成功: %1").arg(modelPath));
         enableControls(true);
-        ui->reloadModelBtn->setEnabled(true);
+        updateModelButtons(false);
     } else {
         ui->modelStatusLabel->setText("✗ 加载失败");
         ui->modelStatusLabel->setStyleSheet("color: red; font-weight: bold;");
@@ -265,6 +271,11 @@ void MainWindow::onLoadModel() {
 }
 
 void MainWindow::onReloadModel() {
+    if (isDetecting()) {
+        GuiLogger::log(ui->logTextEdit, "系统", "检测进行中, 无法热切换模型");
+        statusMessageLabel_->setText("请先停止检测后再切换模型");
+        return;
+    }
     QString modelPath = ui->modelPathEdit->text().trimmed();
     if (modelPath.isEmpty() || !modelManager_->isLoaded()) {
         QMessageBox::warning(this, "警告", "当前没有已加载的模型");
@@ -351,6 +362,7 @@ void MainWindow::onOpenVideo() {
     ui->stopBtn->setEnabled(true);
     isProcessing_ = true;
     activeDisplayCamera_ = -1;
+    updateModelButtons(true);
 
     startVideoWorker(filePath);
 }
@@ -372,6 +384,7 @@ void MainWindow::onOpenCamera(bool checked) {
         ui->cameraStatusLabel->setText(QString::fromUtf8("● 已开启"));
         activeDisplayCamera_ = 0;
 
+        updateModelButtons(true);
         startCameraWorker(0, "camera_0", "");
 
         // 自动开始录制
@@ -407,6 +420,7 @@ void MainWindow::onAddCamera() {
     GuiLogger::log(ui->logTextEdit, "检测", QString("添加摄像头 %1: %2").arg(camId).arg(source));
     activeDisplayCamera_ = camId;
 
+    updateModelButtons(true);
     startCameraWorker(camId, camName, source);
 
     // 更新摄像头状态显示
@@ -543,6 +557,7 @@ void MainWindow::onStopProcessing() {
     stopAllCameras();
     isProcessing_ = false;
     enableControls(true);
+    updateModelButtons(false);
     ui->stopBtn->setEnabled(false);
     fpsLabel_->setText("FPS: --");
     statusMessageLabel_->setText(QString::fromUtf8("已停止"));
@@ -592,6 +607,7 @@ void MainWindow::onWorkerFinished(int cameraId) {
     if (cameraManager_->isEmpty()) {
         isProcessing_ = false;
         enableControls(true);
+        updateModelButtons(false);
         ui->stopBtn->setEnabled(false);
         fpsLabel_->setText("FPS: --");
         statusMessageLabel_->setText("处理完成");
@@ -674,6 +690,17 @@ void MainWindow::updateDetectionList(const std::vector<Detection>& detections, d
 
     ui->totalCountLabel->setText(QString("目标总数: %1").arg(detections.size()));
     timeLabel_->setText(QString("耗时: %1ms").arg(elapsedMs, 0, 'f', 1));
+}
+
+bool MainWindow::isDetecting() const {
+    return !cameraManager_->isEmpty() || isProcessing_;
+}
+
+void MainWindow::updateModelButtons(bool detecting) {
+    ui->loadModelBtn->setEnabled(!detecting);
+    ui->reloadModelBtn->setEnabled(!detecting && modelManager_->isLoaded());
+    ui->browseModelBtn->setEnabled(!detecting);
+    ui->modelPathEdit->setReadOnly(detecting);
 }
 
 void MainWindow::enableControls(bool enabled) {

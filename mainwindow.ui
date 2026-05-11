@@ -415,10 +415,10 @@ QListWidget::item { padding: 8px; }</string>
          <number>0</number>
         </property>
         <property name="maximum">
-         <number>0</number>
+         <number>100</number>
         </property>
         <property name="value">
-         <number>0</number>
+         <number>25</number>
         </property>
         <property name="orientation">
          <enum>Qt::Orientation::Horizontal</enum>
@@ -461,10 +461,10 @@ QListWidget::item { padding: 8px; }</string>
          <number>0</number>
         </property>
         <property name="maximum">
-         <number>0</number>
+         <number>100</number>
         </property>
         <property name="value">
-         <number>0</number>
+         <number>45</number>
         </property>
         <property name="orientation">
          <enum>Qt::Orientation::Horizontal</enum>

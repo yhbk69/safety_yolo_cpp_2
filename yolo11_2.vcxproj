@@ -248,7 +248,6 @@
     <ClInclude Include="http_file_server.hpp" />
     <ClInclude Include="inference_engine.hpp" />
     <ClInclude Include="inference_manager.hpp" />
-    <ClInclude Include="inference_runner.hpp" />
     <ClInclude Include="inference_worker.hpp" />
     <ClInclude Include="logger.hpp" />
     <ClInclude Include="mainwindow.hpp" />

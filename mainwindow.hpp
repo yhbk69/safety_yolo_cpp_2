@@ -6,14 +6,11 @@
 #include <QThread>
 #include <QImage>
 #include <QLabel>
-#include <QWebSocketServer>
-#include <QWebSocket>
 #include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimer>
 #include <QDir>
-// QTcpServer/QTcpSocket no longer needed directly; HttpFileServer manages them
 #include <QDialog>
 #include <QFormLayout>
 #include <QSpinBox>
@@ -22,9 +19,6 @@
 #include <QDesktopServices>
 #include <QSharedPointer>
 #include <atomic>
-#include <deque>
-#include <unordered_map>
-#include <mutex>
 #include <memory>
 
 #include <opencv2/opencv.hpp>
@@ -82,6 +76,8 @@ public:
 private:
     void setupConnections();
     void updateThresholdLabels();
+    bool isDetecting() const;
+    void updateModelButtons(bool detecting);
     void processSingleImage(const std::string& path);
     void updateDisplay(const QImage& image);
     void updateDetectionList(const std::vector<Detection>& detections, double elapsedMs);
@@ -115,20 +111,6 @@ private:
     // 输出通道 (MJPEG, WebSocket 告警, 录像 等)
     std::vector<std::unique_ptr<IOutputSink>> sinks_;
     VideoRecorder* videoRecorder_ = nullptr;  // 别名, UI 控制用
-
-    // 待确认的告警: alarm_id → {json消息, 重试定时器, 重试次数}
-    struct PendingAlarm {
-        QString jsonMessage;
-        QTimer* retryTimer = nullptr;
-        int retryCount = 0;
-    };
-
-    static constexpr int MAX_RETRY_COUNT = 10;
-
-    // 围栏设置: stream_id → fence区域
-    struct FenceRegion {
-        float x1, y1, x2, y2;
-    };
 
 private slots:
     // 录制相关

@@ -46,8 +46,11 @@ void InferenceWorker::process(std::unique_ptr<IVideoSource> source,
         }
         firstFrame = false;
 
+        auto t0 = std::chrono::steady_clock::now();
         auto result = processOneFrame(frame, confThresh, nmsThresh);
-        emit frameProcessed(cameraId_, result.image, result.detections, 0);
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - t0).count();
+        emit frameProcessed(cameraId_, result.image, result.detections, elapsed);
 
         if (delayMs > 0) {
             QThread::msleep(delayMs);
