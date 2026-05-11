@@ -22,8 +22,8 @@ QT_BEGIN_MOC_NAMESPACE
 QT_WARNING_PUSH
 QT_WARNING_DISABLE_DEPRECATED
 struct qt_meta_stringdata_InferenceWorker_t {
-    QByteArrayData data[24];
-    char stringdata0[261];
+    QByteArrayData data[18];
+    char stringdata0[194];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -47,24 +47,16 @@ QT_MOC_LITERAL(11, 122, 9), // "alertJson"
 QT_MOC_LITERAL(12, 132, 8), // "finished"
 QT_MOC_LITERAL(13, 141, 13), // "errorOccurred"
 QT_MOC_LITERAL(14, 155, 7), // "message"
-QT_MOC_LITERAL(15, 163, 12), // "processVideo"
-QT_MOC_LITERAL(16, 176, 4), // "path"
-QT_MOC_LITERAL(17, 181, 10), // "confThresh"
-QT_MOC_LITERAL(18, 192, 9), // "nmsThresh"
-QT_MOC_LITERAL(19, 202, 13), // "processCamera"
-QT_MOC_LITERAL(20, 216, 13), // "processSource"
-QT_MOC_LITERAL(21, 230, 4), // "stop"
-QT_MOC_LITERAL(22, 235, 17), // "setBatchInference"
-QT_MOC_LITERAL(23, 253, 7) // "enabled"
+QT_MOC_LITERAL(15, 163, 4), // "stop"
+QT_MOC_LITERAL(16, 168, 17), // "setBatchInference"
+QT_MOC_LITERAL(17, 186, 7) // "enabled"
 
     },
     "InferenceWorker\0frameProcessed\0\0"
     "cameraId\0image\0std::vector<Detection>\0"
     "detections\0elapsedMs\0alertSaved\0"
     "videoPath\0imagePath\0alertJson\0finished\0"
-    "errorOccurred\0message\0processVideo\0"
-    "path\0confThresh\0nmsThresh\0processCamera\0"
-    "processSource\0stop\0setBatchInference\0"
+    "errorOccurred\0message\0stop\0setBatchInference\0"
     "enabled"
 };
 #undef QT_MOC_LITERAL
@@ -75,7 +67,7 @@ static const uint qt_meta_data_InferenceWorker[] = {
        8,       // revision
        0,       // classname
        0,    0, // classinfo
-       9,   14, // methods
+       6,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
@@ -83,17 +75,14 @@ static const uint qt_meta_data_InferenceWorker[] = {
        4,       // signalCount
 
  // signals: name, argc, parameters, tag, flags
-       1,    4,   59,    2, 0x06 /* Public */,
-       8,    4,   68,    2, 0x06 /* Public */,
-      12,    1,   77,    2, 0x06 /* Public */,
-      13,    2,   80,    2, 0x06 /* Public */,
+       1,    4,   44,    2, 0x06 /* Public */,
+       8,    4,   53,    2, 0x06 /* Public */,
+      12,    1,   62,    2, 0x06 /* Public */,
+      13,    2,   65,    2, 0x06 /* Public */,
 
  // slots: name, argc, parameters, tag, flags
-      15,    3,   85,    2, 0x0a /* Public */,
-      19,    2,   92,    2, 0x0a /* Public */,
-      20,    2,   97,    2, 0x0a /* Public */,
-      21,    0,  102,    2, 0x0a /* Public */,
-      22,    1,  103,    2, 0x0a /* Public */,
+      15,    0,   70,    2, 0x0a /* Public */,
+      16,    1,   71,    2, 0x0a /* Public */,
 
  // signals: parameters
     QMetaType::Void, QMetaType::Int, QMetaType::QImage, 0x80000000 | 5, QMetaType::Double,    3,    4,    6,    7,
@@ -102,11 +91,8 @@ static const uint qt_meta_data_InferenceWorker[] = {
     QMetaType::Void, QMetaType::Int, QMetaType::QString,    3,   14,
 
  // slots: parameters
-    QMetaType::Void, QMetaType::QString, QMetaType::Float, QMetaType::Float,   16,   17,   18,
-    QMetaType::Void, QMetaType::Float, QMetaType::Float,   17,   18,
-    QMetaType::Void, QMetaType::Float, QMetaType::Float,   17,   18,
     QMetaType::Void,
-    QMetaType::Void, QMetaType::Bool,   23,
+    QMetaType::Void, QMetaType::Bool,   17,
 
        0        // eod
 };
@@ -121,11 +107,8 @@ void InferenceWorker::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int 
         case 1: _t->alertSaved((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< QString(*)>(_a[2])),(*reinterpret_cast< QString(*)>(_a[3])),(*reinterpret_cast< QString(*)>(_a[4]))); break;
         case 2: _t->finished((*reinterpret_cast< int(*)>(_a[1]))); break;
         case 3: _t->errorOccurred((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< const QString(*)>(_a[2]))); break;
-        case 4: _t->processVideo((*reinterpret_cast< const QString(*)>(_a[1])),(*reinterpret_cast< float(*)>(_a[2])),(*reinterpret_cast< float(*)>(_a[3]))); break;
-        case 5: _t->processCamera((*reinterpret_cast< float(*)>(_a[1])),(*reinterpret_cast< float(*)>(_a[2]))); break;
-        case 6: _t->processSource((*reinterpret_cast< float(*)>(_a[1])),(*reinterpret_cast< float(*)>(_a[2]))); break;
-        case 7: _t->stop(); break;
-        case 8: _t->setBatchInference((*reinterpret_cast< bool(*)>(_a[1]))); break;
+        case 4: _t->stop(); break;
+        case 5: _t->setBatchInference((*reinterpret_cast< bool(*)>(_a[1]))); break;
         default: ;
         }
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
@@ -201,13 +184,13 @@ int InferenceWorker::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 9)
+        if (_id < 6)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 9;
+        _id -= 6;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 9)
+        if (_id < 6)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 9;
+        _id -= 6;
     }
     return _id;
 }

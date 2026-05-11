@@ -8,6 +8,7 @@
 #include "gui_logger.hpp"
 #include "settings_dialog.hpp"
 #include "detection_utils.hpp"
+#include "video_source.hpp"
 
 #include <QAction>
 #include <QFileDialog>
@@ -357,7 +358,7 @@ void MainWindow::onOpenCamera(bool checked) {
         ui->cameraStatusLabel->setText(QString::fromUtf8("● 已开启"));
         activeDisplayCamera_ = 0;
 
-        startCameraWorker(0, "camera_0", "", &InferenceWorker::processCamera);
+        startCameraWorker(0, "camera_0", "");
 
         // 自动开始录制
         QTimer::singleShot(500, this, [this]() {
@@ -392,7 +393,7 @@ void MainWindow::onAddCamera() {
     GuiLogger::log(ui->logTextEdit, "检测", QString("添加摄像头 %1: %2").arg(camId).arg(source));
     activeDisplayCamera_ = camId;
 
-    startCameraWorker(camId, camName, source, &InferenceWorker::processSource);
+    startCameraWorker(camId, camName, source);
 
     // 更新摄像头状态显示
     ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
@@ -450,19 +451,19 @@ void MainWindow::stopAllCameras() {
     }
 }
 
-void MainWindow::startCameraWorker(int cameraId, const QString& name, const QString& source,
-                                    void (InferenceWorker::*processFn)(float, float)) {
+void MainWindow::startCameraWorker(int cameraId, const QString& name, const QString& source) {
     auto* thread = new QThread(this);
-    auto* worker = new InferenceWorker(modelManager_->engine(), cameraId, name, source);
+    auto* worker = new InferenceWorker(modelManager_->engine(), cameraId, name);
     worker->moveToThread(thread);
 
     connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
     connect(worker, &InferenceWorker::alertSaved, this, &MainWindow::onAlertSaved);
     connect(worker, &InferenceWorker::finished, this, &MainWindow::onWorkerFinished);
     connect(worker, &InferenceWorker::errorOccurred, this, &MainWindow::onWorkerError);
-    connect(thread, &QThread::started, worker, [this, worker, processFn]() {
+    connect(thread, &QThread::started, worker, [this, worker, source, cameraId]() {
         worker->setBatchInference(ui->batchInferenceCheck->isChecked());
-        (worker->*processFn)(confThreshold_, nmsThreshold_);
+        worker->process(std::make_unique<CameraVideoSource>(cameraId, source),
+                        confThreshold_, nmsThreshold_);
     });
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
 
@@ -472,7 +473,7 @@ void MainWindow::startCameraWorker(int cameraId, const QString& name, const QStr
 
 void MainWindow::startVideoWorker(const QString& filePath) {
     auto* thread = new QThread(this);
-    auto* worker = new InferenceWorker(modelManager_->engine(), -1, "video", filePath);
+    auto* worker = new InferenceWorker(modelManager_->engine(), -1, "video");
     worker->moveToThread(thread);
 
     connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
@@ -483,7 +484,8 @@ void MainWindow::startVideoWorker(const QString& filePath) {
     });
     connect(thread, &QThread::started, worker, [this, worker, filePath]() {
         worker->setBatchInference(ui->batchInferenceCheck->isChecked());
-        worker->processVideo(filePath, confThreshold_, nmsThreshold_);
+        worker->process(std::make_unique<FileVideoSource>(filePath),
+                        confThreshold_, nmsThreshold_);
     });
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
 

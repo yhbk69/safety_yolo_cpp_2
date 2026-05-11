@@ -227,6 +227,7 @@
     <ClCompile Include="gui_logger.cpp" />
     <ClCompile Include="inference_worker.cpp" />
     <ClCompile Include="http_file_server.cpp" />
+    <ClCompile Include="video_source.cpp" />
     <ClCompile Include="inference_manager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mainwindow.cpp" />
@@ -259,6 +260,7 @@
     <ClInclude Include="settings_dialog.hpp" />
     <ClInclude Include="types.hpp" />
     <ClInclude Include="video_recorder.hpp" />
+    <ClInclude Include="video_source.hpp" />
     <ClInclude Include="yolo_trt_engine.hpp" />
     <ClInclude Include="websocket_manager.hpp" />
   </ItemGroup>

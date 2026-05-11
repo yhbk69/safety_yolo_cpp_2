@@ -88,8 +88,7 @@ private:
     void updateDisplay(const QImage& image);
     void updateDetectionList(const std::vector<Detection>& detections, double elapsedMs);
     void enableControls(bool enabled);
-    void startCameraWorker(int cameraId, const QString& name, const QString& source,
-                           void (InferenceWorker::*processFn)(float, float));
+    void startCameraWorker(int cameraId, const QString& name, const QString& source);
     void startVideoWorker(const QString& filePath);
     void stopCamera(int cameraId);
     void stopAllCameras();

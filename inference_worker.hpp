@@ -29,6 +29,7 @@
 #include <opencv2/opencv.hpp>
 
 #include "inference_engine.hpp"
+#include "video_source.hpp"
 #include "preprocessor.hpp"
 #include "postprocessor.hpp"
 #include "types.hpp"
@@ -41,17 +42,17 @@ class InferenceWorker : public QObject {
 
 public:
     explicit InferenceWorker(IEngine* engine, int cameraId = 0,
-                             const QString& cameraName = "camera_0",
-                             const QString& source = "");
+                             const QString& cameraName = "camera_0");
     ~InferenceWorker() override = default;
 
     int cameraId() const { return cameraId_; }
     QString cameraName() const { return cameraName_; }
 
+public:
+    /// 统一推理入口（非 slot，unique_ptr 无法被 MOC 处理）
+    void process(std::unique_ptr<IVideoSource> source, float confThresh, float nmsThresh);
+
 public slots:
-    void processVideo(const QString& path, float confThresh, float nmsThresh);
-    void processCamera(float confThresh, float nmsThresh);
-    void processSource(float confThresh, float nmsThresh);
     void stop();
     void setBatchInference(bool enabled) { useBatchInference_ = enabled; }
 
@@ -75,8 +76,6 @@ private:
     IEngine* engine_;
     int cameraId_;
     QString cameraName_;
-    /** 视频源: 数字=设备ID, rtsp://=RTSP流, 空=使用cameraId_ */
-    QString source_;
     std::atomic<bool> running_{false};
 
     // 批量推理状态

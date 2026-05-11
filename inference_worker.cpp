@@ -14,93 +14,47 @@
 #include <QThread>
 
 InferenceWorker::InferenceWorker(IEngine* engine, int cameraId,
-                                     const QString& cameraName,
-                                     const QString& source)
+                                     const QString& cameraName)
     : engine_(engine)
     , cameraId_(cameraId)
     , cameraName_(cameraName)
-    , source_(source)
 {
     outputDir_ = QDir::cleanPath(QDir::currentPath() + "/" +
         QString::fromStdString(Config::OUTPUT_DIR));
     QDir().mkpath(outputDir_);
 }
 
-void InferenceWorker::processVideo(const QString& path, float confThresh, float nmsThresh) {
-    cv::VideoCapture cap(path.toStdString());
-    if (!cap.isOpened()) {
-        emit errorOccurred(cameraId_, QString::fromUtf8("无法打开视频文件: ") + path);
+void InferenceWorker::process(std::unique_ptr<IVideoSource> source,
+                               float confThresh, float nmsThresh) {
+    if (!source) {
         emit finished(cameraId_);
         return;
     }
-    running_ = true;
-    while (running_) {
-        cv::Mat frame;
-        if (!cap.read(frame)) break;
-        auto result = processOneFrame(frame, confThresh, nmsThresh);
-        emit frameProcessed(cameraId_, result.image, result.detections, 0);
-    }
-    cap.release();
-    emit finished(cameraId_);
-}
 
-void InferenceWorker::processCamera(float confThresh, float nmsThresh) {
-    cv::VideoCapture cap;
-    if (!source_.isEmpty() && source_.startsWith("rtsp://")) {
-        cap.open(source_.toStdString());
-    } else if (!source_.isEmpty()) {
-        bool ok = false;
-        int devId = source_.toInt(&ok);
-        cap.open(ok ? devId : 0, cv::CAP_DSHOW);
-    } else {
-        cap.open(cameraId_, cv::CAP_DSHOW);
-    }
-
-    if (!cap.isOpened()) {
-        emit errorOccurred(cameraId_, QString::fromUtf8("无法打开摄像头, 请检查设备连接"));
-        emit finished(cameraId_);
-        return;
-    }
     running_ = true;
-    const int frameDelayMs = 33;
+    const int delayMs = source->frameDelayMs();
+    cv::Mat frame;
+    bool firstFrame = true;
+
     while (running_) {
-        cv::Mat frame;
-        cap.set(cv::CAP_PROP_BUFFERSIZE, 1);
-        if (!cap.read(frame)) {
-            if (running_) {
-                emit errorOccurred(cameraId_, QString::fromUtf8("摄像头读取失败，设备可能已断开"));
+        if (!source->readFrame(frame)) {
+            if (firstFrame) {
+                emit errorOccurred(cameraId_,
+                    QString::fromUtf8("无法打开视频源: ") + source->name());
             }
             break;
         }
+        firstFrame = false;
+
         auto result = processOneFrame(frame, confThresh, nmsThresh);
         emit frameProcessed(cameraId_, result.image, result.detections, 0);
-        QThread::msleep(frameDelayMs);
-    }
-    cap.release();
-    emit finished(cameraId_);
-}
 
-void InferenceWorker::processSource(float confThresh, float nmsThresh) {
-    if (!source_.isEmpty() && source_.startsWith("rtsp://")) {
-        cv::VideoCapture cap(source_.toStdString());
-        if (!cap.isOpened()) {
-            emit errorOccurred(cameraId_, QString::fromUtf8("无法打开RTSP流: ") + source_);
-            emit finished(cameraId_);
-            return;
+        if (delayMs > 0) {
+            QThread::msleep(delayMs);
         }
-        running_ = true;
-        while (running_) {
-            cv::Mat frame;
-            if (!cap.read(frame)) break;
-            auto result = processOneFrame(frame, confThresh, nmsThresh);
-            emit frameProcessed(cameraId_, result.image, result.detections, 0);
-            QThread::msleep(10);
-        }
-        cap.release();
-        emit finished(cameraId_);
-    } else {
-        processCamera(confThresh, nmsThresh);
     }
+
+    emit finished(cameraId_);
 }
 
 void InferenceWorker::stop() {

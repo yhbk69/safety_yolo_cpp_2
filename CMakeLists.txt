@@ -56,6 +56,7 @@ set(SOURCES
     gui_logger.cpp
     inference_worker.cpp
     http_file_server.cpp
+    video_source.cpp
     mainwindow.ui        # Qt UI 布局文件(由 Qt Creator 可视化编辑)
 )
 
@@ -72,6 +73,7 @@ set(HEADERS
     inference_runner.hpp
     inference_worker.hpp
     http_file_server.hpp
+    video_source.hpp
 )
 
 # ============ 生成可执行文件 ============
