@@ -35,6 +35,7 @@
 #include "yolo_trt_engine.hpp"
 #include "inference_worker.hpp"
 #include "http_file_server.hpp"
+#include "inference_manager.hpp"
 #include "config.hpp"
 #include "runtime_config.hpp"
 #include "video_recorder.hpp"
@@ -107,6 +108,7 @@ private:
     QString currentTimestamp();
 
     std::unique_ptr<ModelManager> modelManager_;
+    std::unique_ptr<InferenceManager> inferenceManager_;
 
     std::unique_ptr<HttpFileServer> httpFileServer_;
     std::unique_ptr<WebSocketManager> wsManager_;  // 新: WebSocket 管理器

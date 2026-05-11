@@ -6,6 +6,7 @@
 #include "mainwindow.hpp"
 #include "ui_mainwindow.h"
 #include "gui_logger.hpp"
+#include "settings_dialog.hpp"
 
 #include <QAction>
 #include <QFileDialog>
@@ -23,9 +24,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 
-#include <chrono>
 #include <filesystem>
-#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -131,6 +130,14 @@ MainWindow::MainWindow(QWidget *parent)
     // 初始化 CameraManager
     cameraManager_ = std::make_unique<CameraManager>();
     cameraManager_->setCallbacks({
+        .log = [this](const QString& cat, const QString& msg) {
+            GuiLogger::log(ui->logTextEdit, cat, msg);
+        }
+    });
+
+    // 初始化 InferenceManager
+    inferenceManager_ = std::make_unique<InferenceManager>();
+    inferenceManager_->setCallbacks({
         .log = [this](const QString& cat, const QString& msg) {
             GuiLogger::log(ui->logTextEdit, cat, msg);
         }
@@ -321,36 +328,29 @@ void MainWindow::onOpenImage() {
 }
 
 void MainWindow::processSingleImage(const std::string& path) {
-    try {
-        cv::Mat img = cv::imread(path);
-        if (img.empty()) {
-            QMessageBox::warning(this, "错误", "无法读取图像");
-            statusMessageLabel_->setText("图像读取失败");
-            return;
-        }
-        auto start = std::chrono::high_resolution_clock::now();
-        cv::Mat processed = Preprocessor::letterbox(img);
-        std::vector<float> tensor = Preprocessor::imageToTensor(processed);
-        std::vector<Detection> detections;
-        modelManager_->engine()->infer(tensor, detections, img.cols, img.rows,
-                       confThreshold_, nmsThreshold_);
-        auto end = std::chrono::high_resolution_clock::now();
-        double elapsedMs = std::chrono::duration<double, std::milli>(end - start).count();
-
-        cv::Mat displayImg = img.clone();
-        Postprocessor::drawDetections(displayImg, detections);
-
-        cv::Mat rgb;
-        cv::cvtColor(displayImg, rgb, cv::COLOR_BGR2RGB);
-        QImage qimg(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888);
-        updateDisplay(qimg.copy());
-        updateDetectionList(detections, elapsedMs);
-        statusMessageLabel_->setText(
-            QString("推理完成 - 检测到 %1 个目标").arg(detections.size()));
-    } catch (const std::exception& e) {
-        QMessageBox::critical(this, "推理错误", e.what());
-        statusMessageLabel_->setText("推理出错");
+    cv::Mat img = cv::imread(path);
+    if (img.empty()) {
+        QMessageBox::warning(this, "错误", "无法读取图像");
+        statusMessageLabel_->setText("图像读取失败");
+        return;
     }
+
+    auto result = inferenceManager_->processImage(
+        modelManager_->engine(), img, confThreshold_, nmsThreshold_);
+
+    if (!result.success) {
+        QMessageBox::critical(this, "推理错误", result.errorMsg);
+        statusMessageLabel_->setText("推理出错");
+        return;
+    }
+
+    cv::Mat rgb;
+    cv::cvtColor(result.annotated, rgb, cv::COLOR_BGR2RGB);
+    QImage qimg(rgb.data, rgb.cols, rgb.rows, rgb.step, QImage::Format_RGB888);
+    updateDisplay(qimg.copy());
+    updateDetectionList(result.detections, result.elapsedMs);
+    statusMessageLabel_->setText(
+        QString("推理完成 - 检测到 %1 个目标").arg(result.detections.size()));
 }
 
 void MainWindow::onOpenVideo() {
@@ -549,44 +549,27 @@ void MainWindow::onOpenFolder() {
 
     GuiLogger::log(ui->logTextEdit, "检测", QString("批量处理文件夹: %1").arg(dirPath));
 
-    std::vector<std::string> extensions = {".jpg", ".jpeg", ".png", ".bmp"};
-    int total = 0, succ = 0;
     statusMessageLabel_->setText("正在批量处理...");
     QApplication::processEvents();
 
-    try {
-        for (const auto& entry : fs::directory_iterator(dirPath.toStdString())) {
-            if (!fs::is_regular_file(entry)) continue;
-            std::string ext = entry.path().extension().string();
-            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-            if (std::find(extensions.begin(), extensions.end(), ext) != extensions.end()) {
-                try {
-                    cv::Mat img = cv::imread(entry.path().string());
-                    if (img.empty()) continue;
-                    cv::Mat processed = Preprocessor::letterbox(img);
-                    std::vector<float> tensor = Preprocessor::imageToTensor(processed);
-                    std::vector<Detection> detections;
-                    modelManager_->engine()->infer(tensor, detections, img.cols, img.rows,
-                                   confThreshold_, nmsThreshold_);
-                    Postprocessor::drawDetections(img, detections);
-                    cv::imwrite(Config::OUTPUT_DIR + "/result_" +
-                                entry.path().filename().string(), img);
-                    succ++;
-                } catch (...) {}
-                total++;
-                statusMessageLabel_->setText(
-                    QString("批量处理: %1/%2").arg(succ).arg(total));
-                QApplication::processEvents();
-            }
-        }
-        statusMessageLabel_->setText(
-            QString("批量处理完成 - 成功处理 %1/%2 张图片").arg(succ).arg(total));
-        QMessageBox::information(this, "批量处理完成",
-            QString("共扫描 %1 张\n成功处理 %2 张\n结果保存至: %3")
-                .arg(total).arg(succ).arg(QString::fromStdString(Config::OUTPUT_DIR)));
-    } catch (...) {
-        QMessageBox::critical(this, "批量处理错误", "处理过程中发生错误");
-    }
+    auto folderResult = inferenceManager_->processFolder(
+        modelManager_->engine(),
+        dirPath.toStdString(),
+        confThreshold_, nmsThreshold_,
+        Config::OUTPUT_DIR,
+        [this](int succ, int total) {
+            statusMessageLabel_->setText(
+                QString("批量处理: %1/%2").arg(succ).arg(total));
+            QApplication::processEvents();
+        });
+
+    statusMessageLabel_->setText(
+        QString("批量处理完成 - 成功处理 %1/%2 张图片")
+            .arg(folderResult.succ).arg(folderResult.total));
+    QMessageBox::information(this, "批量处理完成",
+        QString("共扫描 %1 张\n成功处理 %2 张\n结果保存至: %3")
+            .arg(folderResult.total).arg(folderResult.succ)
+            .arg(QString::fromStdString(Config::OUTPUT_DIR)));
 }
 
 void MainWindow::onStopProcessing() {
@@ -868,93 +851,44 @@ void MainWindow::saveRuntimeConfig() {
 void MainWindow::onSettings() {
     auto& cfg = RuntimeConfig::instance();
 
-    auto* dlg = new QDialog(this);
-    dlg->setWindowTitle(QString::fromUtf8("运行时设置"));
-    dlg->setMinimumWidth(480);
-    auto* layout = new QFormLayout(dlg);
+    SettingsDialog dlg(SettingsResult{
+        .confThreshold = confThreshold_,
+        .nmsThreshold = nmsThreshold_,
+        .websocketPort = cfg.websocketPort(),
+        .httpPort = cfg.httpPort(),
+        .streamPort = cfg.streamPort(),
+        .ackTimeoutMs = cfg.ackTimeoutMs(),
+        .alertCooldownMs = cfg.alertCooldownMs(),
+        .ringBufferFrames = cfg.ringBufferFrames(),
+        .modelPath = cfg.modelPath(),
+        .outputDir = cfg.outputDir(),
+        .recordDir = cfg.recordDir(),
+    }, this);
 
-    // 阈值
-    auto* confSpin = new QDoubleSpinBox(dlg);
-    confSpin->setRange(0.01, 0.99); confSpin->setSingleStep(0.05);
-    confSpin->setDecimals(2); confSpin->setValue(confThreshold_);
-    layout->addRow(QString::fromUtf8("置信度阈值:"), confSpin);
-
-    auto* nmsSpin = new QDoubleSpinBox(dlg);
-    nmsSpin->setRange(0.01, 0.99); nmsSpin->setSingleStep(0.05);
-    nmsSpin->setDecimals(2); nmsSpin->setValue(nmsThreshold_);
-    layout->addRow(QString::fromUtf8("NMS IOU阈值:"), nmsSpin);
-
-    // 端口
-    auto* wsPortSpin = new QSpinBox(dlg);
-    wsPortSpin->setRange(1024, 65535); wsPortSpin->setValue(cfg.websocketPort());
-    layout->addRow(QString::fromUtf8("WebSocket端口:"), wsPortSpin);
-
-    auto* httpPortSpin = new QSpinBox(dlg);
-    httpPortSpin->setRange(1024, 65535); httpPortSpin->setValue(cfg.httpPort());
-    layout->addRow(QString::fromUtf8("HTTP端口:"), httpPortSpin);
-
-    auto* streamPortSpin = new QSpinBox(dlg);
-    streamPortSpin->setRange(1024, 65535); streamPortSpin->setValue(cfg.streamPort());
-    layout->addRow(QString::fromUtf8("MJPEG流端口:"), streamPortSpin);
-
-    // 告警参数
-    auto* ackSpin = new QSpinBox(dlg);
-    ackSpin->setRange(1000, 60000); ackSpin->setSingleStep(1000); ackSpin->setValue(cfg.ackTimeoutMs());
-    ackSpin->setSuffix(" ms");
-    layout->addRow(QString::fromUtf8("ACK超时:"), ackSpin);
-
-    auto* cooldownSpin = new QSpinBox(dlg);
-    cooldownSpin->setRange(1000, 60000); cooldownSpin->setSingleStep(1000); cooldownSpin->setValue(cfg.alertCooldownMs());
-    cooldownSpin->setSuffix(" ms");
-    layout->addRow(QString::fromUtf8("告警冷却:"), cooldownSpin);
-
-    auto* ringSpin = new QSpinBox(dlg);
-    ringSpin->setRange(10, 300); ringSpin->setValue(cfg.ringBufferFrames());
-    layout->addRow(QString::fromUtf8("环形缓冲帧数:"), ringSpin);
-
-    // 路径
-    auto* modelEdit = new QLineEdit(cfg.modelPath(), dlg);
-    layout->addRow(QString::fromUtf8("模型路径:"), modelEdit);
-
-    auto* outputEdit = new QLineEdit(cfg.outputDir(), dlg);
-    layout->addRow(QString::fromUtf8("输出目录:"), outputEdit);
-
-    auto* recordEdit = new QLineEdit(cfg.recordDir(), dlg);
-    layout->addRow(QString::fromUtf8("录像目录:"), recordEdit);
-
-    // 按钮
-    auto* btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
-    layout->addRow(btns);
-
-    connect(btns, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
-    connect(btns, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
-
-    if (dlg->exec() == QDialog::Accepted) {
-        // 应用设置
-        confThreshold_ = (float)confSpin->value();
-        nmsThreshold_  = (float)nmsSpin->value();
+    if (dlg.exec() == QDialog::Accepted) {
+        auto r = dlg.result();
+        confThreshold_ = r.confThreshold;
+        nmsThreshold_ = r.nmsThreshold;
         ui->confSlider->setValue(static_cast<int>(confThreshold_ * 100));
         ui->nmsSlider->setValue(static_cast<int>(nmsThreshold_ * 100));
 
-        cfg.setConfThreshold(confThreshold_);
-        cfg.setIouThreshold(nmsThreshold_);
-        cfg.setWebsocketPort(wsPortSpin->value());
-        cfg.setHttpPort(httpPortSpin->value());
-        cfg.setStreamPort(streamPortSpin->value());
-        cfg.setAckTimeoutMs(ackSpin->value());
-        cfg.setAlertCooldownMs(cooldownSpin->value());
-        cfg.setRingBufferFrames(ringSpin->value());
-        cfg.setModelPath(modelEdit->text());
-        cfg.setOutputDir(outputEdit->text());
-        cfg.setRecordDir(recordEdit->text());
+        cfg.setConfThreshold(r.confThreshold);
+        cfg.setIouThreshold(r.nmsThreshold);
+        cfg.setWebsocketPort(r.websocketPort);
+        cfg.setHttpPort(r.httpPort);
+        cfg.setStreamPort(r.streamPort);
+        cfg.setAckTimeoutMs(r.ackTimeoutMs);
+        cfg.setAlertCooldownMs(r.alertCooldownMs);
+        cfg.setRingBufferFrames(r.ringBufferFrames);
+        cfg.setModelPath(r.modelPath);
+        cfg.setOutputDir(r.outputDir);
+        cfg.setRecordDir(r.recordDir);
 
-        // 保存到JSON
         saveRuntimeConfig();
 
-        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"), QString::fromUtf8("运行时设置已更新(端口变更需重启生效)"));
+        GuiLogger::log(ui->logTextEdit, QString::fromUtf8("配置"),
+            QString::fromUtf8("运行时设置已更新(端口变更需重启生效)"));
     }
-
-    delete dlg;
 }
 
 // ============================================================

@@ -227,10 +227,12 @@
     <ClCompile Include="gui_logger.cpp" />
     <ClCompile Include="inference_worker.cpp" />
     <ClCompile Include="http_file_server.cpp" />
+    <ClCompile Include="inference_manager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mainwindow.cpp" />
     <ClCompile Include="camera_manager.cpp" />
     <ClCompile Include="model_manager.cpp" />
+    <ClCompile Include="settings_dialog.cpp" />
     <ClCompile Include="mjpeg_streamer.cpp" />
     <ClCompile Include="moc_mainwindow.cpp" />
     <ClCompile Include="video_recorder.cpp" />
@@ -242,6 +244,7 @@
     <ClInclude Include="config.hpp" />
     <ClInclude Include="gui_logger.hpp" />
     <ClInclude Include="http_file_server.hpp" />
+    <ClInclude Include="inference_manager.hpp" />
     <ClInclude Include="inference_runner.hpp" />
     <ClInclude Include="inference_worker.hpp" />
     <ClInclude Include="logger.hpp" />
@@ -251,6 +254,7 @@
     <ClInclude Include="postprocessor.hpp" />
     <ClInclude Include="preprocessor.hpp" />
     <ClInclude Include="runtime_config.hpp" />
+    <ClInclude Include="settings_dialog.hpp" />
     <ClInclude Include="types.hpp" />
     <ClInclude Include="video_recorder.hpp" />
     <ClInclude Include="yolo_trt_engine.hpp" />
