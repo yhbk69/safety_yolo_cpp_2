@@ -34,6 +34,36 @@
  *   float conf = cfg.confThreshold();
  *   cfg.loadFromFile("config.json");  // 热重载
  */
+/** 记忆的摄像头条目 */
+struct CameraEntry {
+    QString source;       // 设备ID(e.g. "0") 或 RTSP URL
+    QString alias;        // 用户自定义别名
+    float confThreshold = 0.25f;
+    float nmsThreshold  = 0.45f;
+
+    QJsonObject toJson() const {
+        QJsonObject obj;
+        obj["source"]         = source;
+        obj["alias"]          = alias;
+        obj["conf_threshold"] = confThreshold;
+        obj["nms_threshold"]  = nmsThreshold;
+        return obj;
+    }
+
+    static CameraEntry fromJson(const QJsonObject& obj) {
+        CameraEntry e;
+        e.source         = obj["source"].toString();
+        e.alias          = obj["alias"].toString();
+        e.confThreshold  = (float)obj["conf_threshold"].toDouble(0.25);
+        e.nmsThreshold   = (float)obj["nms_threshold"].toDouble(0.45);
+        return e;
+    }
+
+    QString displayName() const {
+        return alias.isEmpty() ? source : alias;
+    }
+};
+
 class RuntimeConfig {
 public:
     static RuntimeConfig& instance() {
@@ -81,6 +111,30 @@ public:
 
     int recordKeepDays() const        { std::lock_guard<std::mutex> lk(mu_); return recordKeepDays_; }
     void setRecordKeepDays(int v)     { std::lock_guard<std::mutex> lk(mu_); recordKeepDays_ = v; }
+
+    // ---- 记忆摄像头列表 ----
+
+    std::vector<CameraEntry> cameras() const {
+        std::lock_guard<std::mutex> lk(mu_);
+        return cameras_;
+    }
+    void setCameras(const std::vector<CameraEntry>& v) {
+        std::lock_guard<std::mutex> lk(mu_);
+        cameras_ = v;
+    }
+    void addCamera(const CameraEntry& cam) {
+        std::lock_guard<std::mutex> lk(mu_);
+        cameras_.push_back(cam);
+    }
+    void removeCamera(int index) {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (index >= 0 && index < (int)cameras_.size())
+            cameras_.erase(cameras_.begin() + index);
+    }
+    void clearCameras() {
+        std::lock_guard<std::mutex> lk(mu_);
+        cameras_.clear();
+    }
 
     // ---- 文件 I/O ----
 
@@ -140,6 +194,11 @@ public:
         root["output_dir"]         = outputDir_;
         root["record_dir"]         = recordDir_;
         root["record_keep_days"]   = recordKeepDays_;
+        QJsonArray camArr;
+        for (const auto& c : cameras_) {
+            camArr.append(c.toJson());
+        }
+        root["cameras"] = camArr;
         return root;
     }
 
@@ -163,6 +222,20 @@ private:
         if (root.contains("output_dir"))         outputDir_         = root["output_dir"].toString(outputDir_);
         if (root.contains("record_dir"))         recordDir_         = root["record_dir"].toString(recordDir_);
         if (root.contains("record_keep_days"))   recordKeepDays_    = root["record_keep_days"].toInt(recordKeepDays_);
+        if (root.contains("cameras")) {
+            cameras_.clear();
+            QJsonArray arr = root["cameras"].toArray();
+            for (const auto& v : arr) {
+                if (v.isString()) {
+                    // 旧格式: 纯字符串 source
+                    CameraEntry e;
+                    e.source = v.toString();
+                    cameras_.push_back(std::move(e));
+                } else {
+                    cameras_.push_back(CameraEntry::fromJson(v.toObject()));
+                }
+            }
+        }
         return true;
     }
 
@@ -182,6 +255,7 @@ private:
     QString outputDir_       = "output";
     QString recordDir_       = "recordings";
     int   recordKeepDays_    = 7;
+    std::vector<CameraEntry> cameras_;
     QString configFilePath_  = "config.json";
 };
 

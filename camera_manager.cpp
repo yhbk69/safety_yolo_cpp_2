@@ -64,26 +64,27 @@ QList<int> CameraManager::cameraIds() const {
  * @note 包含线程安全停止逻辑：先尝试软停止，超时则强制终止
  */
 void CameraManager::stop(int cameraId) {
-    // 查找相机条目
     auto it = entries_.find(cameraId);
-    // 如果相机不存在，直接返回
     if (it == entries_.end()) return;
 
-    // 1. 通知 Worker 停止工作（通常是设置原子标志位）
+    // 1. 通知 Worker 停止工作
     if (it->worker) it->worker->stop();
 
-    // 2. 处理线程的生命周期
+    // 2. 等待线程自然退出 (不调用 terminate, 避免在 CUDA 推理中途杀死线程)
     if (it->thread) {
-        // 等待线程正常结束，超时时间为 2000ms
-        if (!it->thread->wait(2000)) {
-            // 如果超时未退出，说明线程可能被阻塞，强制终止
-            it->thread->terminate();
-            // 再次等待，确保线程资源被释放
-            it->thread->wait(500);
+        it->thread->requestInterruption();
+        if (!it->thread->wait(5000)) {
+            if (callbacks_.log) {
+                callbacks_.log("系统", QString("摄像头%1 线程未及时退出, 后台保留").arg(cameraId));
+            }
+            // 断开信号槽防止回调访问已销毁对象
+            it->thread->disconnect();
+            it->thread->deleteLater();
+            entries_.erase(it);
+            return;
         }
     }
 
-    // 3. 从管理器中移除该条目（会自动析构存储的指针数据，如果使用了智能指针或QObject父子机制）
     entries_.erase(it);
 }
 

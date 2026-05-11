@@ -54,6 +54,13 @@ void InferenceWorker::process(std::unique_ptr<IVideoSource> source,
 
         if (delayMs > 0) {
             QThread::msleep(delayMs);
+        } else if (source->isLive()) {
+            // 实时源: 丢弃积压帧, 始终处理最新帧, 降低延迟
+            cv::Mat skip;
+            int drained = 0;
+            while (running_ && source->readFrame(skip) && drained < 5) {
+                drained++;
+            }
         }
     }
 

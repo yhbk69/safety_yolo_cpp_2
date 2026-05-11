@@ -11,6 +11,7 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QDebug>
+#include <QRegularExpression>
 #include <algorithm>
 
 VideoRecorder::VideoRecorder() {
@@ -29,7 +30,7 @@ void VideoRecorder::setCallbacks(const Callbacks& callbacks) {
 // 录制控制
 // ============================================================
 
-bool VideoRecorder::startRecording(int cameraId, double fps) {
+bool VideoRecorder::startRecording(int cameraId, double fps, const QString& alias, const QString& source) {
     QMutexLocker locker(&mutex_);
 
     // 检查是否已经在录制
@@ -44,6 +45,8 @@ bool VideoRecorder::startRecording(int cameraId, double fps) {
     // 创建或获取会话
     auto* session = getOrCreateSession(cameraId);
     if (!session) return false;
+    if (!alias.isEmpty())  session->alias  = alias;
+    if (!source.isEmpty()) session->source = source;
 
     // 获取录像目录
     QString cameraDir = getCameraDirPath(cameraId);
@@ -52,21 +55,9 @@ bool VideoRecorder::startRecording(int cameraId, double fps) {
     // 生成文件名: camera_ID_HHMMSS.mp4
     QString startTime = session->startTime.toString("HHmmss");
     session->videoPath = QString("%1/camera_%2_%3.mp4").arg(cameraDir).arg(cameraId).arg(startTime);
-
-    // 创建 VideoWriter
-    int fourcc = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
-    cv::Size frameSize(session->frameWidth, session->frameHeight);
-    session->writer.open(session->videoPath.toStdString(), fourcc, fps, frameSize);
-
-    if (!session->writer.isOpened()) {
-        if (callbacks_.log) {
-            callbacks_.log("录像", QString("摄像头%1 录像文件创建失败: %2").arg(cameraId).arg(session->videoPath));
-        }
-        return false;
-    }
-
-    session->isRecording = true;
     session->fps = fps;
+    session->isRecording = true;
+    // writer 延迟到 writeFrame 首次调用时创建(此时才能拿到真实帧尺寸)
 
     if (callbacks_.log) {
         callbacks_.log("录像", QString("摄像头%1 开始录制: %2").arg(cameraId).arg(session->videoPath));
@@ -171,17 +162,36 @@ void VideoRecorder::writeFrame(int cameraId, const cv::Mat& frame) {
 
     auto* session = it->second.get();
     if (!session->isRecording) return;
-    if (!session->writer.isOpened()) return;
+
+    // 首次写入时延迟创建 VideoWriter(此时才能拿到真实帧尺寸)
+    if (!session->writer.isOpened()) {
+        int fourcc = cv::VideoWriter::fourcc('a', 'v', 'c', '1');
+        cv::Size frameSize(frame.cols, frame.rows);
+        if (!session->writer.open(session->videoPath.toStdString(), fourcc, session->fps, frameSize)) {
+            // avc1 不可用, 回退到 mp4v
+            fourcc = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
+            if (!session->writer.open(session->videoPath.toStdString(), fourcc, session->fps, frameSize)) {
+                if (callbacks_.log) {
+                    callbacks_.log("录像", QString("摄像头%1 视频编码器初始化失败").arg(cameraId));
+                }
+                session->isRecording = false;
+                return;
+            }
+        }
+        session->frameWidth  = frame.cols;
+        session->frameHeight = frame.rows;
+        if (callbacks_.log) {
+            callbacks_.log("录像", QString("摄像头%1 编码器: %2, 分辨率: %3x%4")
+                .arg(cameraId).arg(fourcc == cv::VideoWriter::fourcc('a','v','c','1') ? "H.264" : "MP4V")
+                .arg(frame.cols).arg(frame.rows));
+        }
+    }
 
     // 将 RGB 转为 BGR (OpenCV 需要)
     cv::Mat bgr;
     cv::cvtColor(frame, bgr, cv::COLOR_RGB2BGR);
 
-    // 调整大小到录制分辨率
-    cv::Mat resized;
-    cv::resize(bgr, resized, cv::Size(session->frameWidth, session->frameHeight));
-
-    session->writer.write(resized);
+    session->writer.write(bgr);
 }
 
 // ============================================================
@@ -266,7 +276,28 @@ QString VideoRecorder::getDateDirPath() const {
 
 QString VideoRecorder::getCameraDirPath(int cameraId) const {
     QString dateDir = getDateDirPath();
-    QString cameraDir = QString("camera_%1").arg(cameraId);
+    QString cameraDir;
+
+    auto it = sessions_.find(cameraId);
+    if (it != sessions_.end()) {
+        QString alias = it->second->alias;
+        QString src   = it->second->source;
+        // 构造: alias_src  (不包含协议前缀)
+        if (!alias.isEmpty()) cameraDir = alias;
+        if (!src.isEmpty()) {
+            QString shortSrc = src;
+            // 去掉 rtsp:// / http:// 前缀
+            if (shortSrc.startsWith("rtsp://"))  shortSrc = shortSrc.mid(7);
+            if (shortSrc.startsWith("http://"))  shortSrc = shortSrc.mid(7);
+            // 替换特殊字符为下划线
+            shortSrc.replace(QRegularExpression(R"([:\/\?@#&=\.\s,;!])"), "_");
+            if (shortSrc.length() > 40) shortSrc = shortSrc.left(40);
+            if (!cameraDir.isEmpty()) cameraDir += "_";
+            cameraDir += shortSrc;
+        }
+    }
+    if (cameraDir.isEmpty()) cameraDir = QString("camera_%1").arg(cameraId);
+
     QString fullPath = dateDir + "/" + cameraDir;
     QDir().mkpath(fullPath);
     return fullPath;

@@ -18,6 +18,7 @@ public:
     virtual bool readFrame(cv::Mat& frame) = 0;
     virtual QString name() const = 0;
     virtual int frameDelayMs() const = 0;
+    virtual bool isLive() const { return false; }
 };
 
 class CameraVideoSource : public IVideoSource {
@@ -27,7 +28,8 @@ public:
 
     bool readFrame(cv::Mat& frame) override;
     QString name() const override { return name_; }
-    int frameDelayMs() const override { return 33; }
+    int frameDelayMs() const override { return 0; }  // 实时源无需额外延迟
+    bool isLive() const { return true; }
 
 private:
     cv::VideoCapture cap_;

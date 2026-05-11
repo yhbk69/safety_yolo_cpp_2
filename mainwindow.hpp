@@ -18,6 +18,8 @@
 #include <QLineEdit>
 #include <QDesktopServices>
 #include <QSharedPointer>
+#include <QListWidget>
+#include <QMenu>
 #include <atomic>
 #include <memory>
 #include <unordered_map>
@@ -87,6 +89,10 @@ private:
     void startVideoWorker(const QString& filePath);
     void stopCamera(int cameraId);
     void stopAllCameras();
+    void autoStartCameras();
+    void savePerCameraThresholds();
+    void refreshCameraList();
+    void onCameraListClicked(QListWidgetItem* item);
     void closeEvent(QCloseEvent* event) override;
     void loadRuntimeConfig();
     void saveRuntimeConfig();
@@ -99,6 +105,8 @@ private:
     QLabel* fpsLabel_;
     QLabel* timeLabel_;
     QLabel* wsAddressLabel_;
+
+    QListWidget* cameraListWidget_;
 
     // 日志输出函数
     void log(const QString& category, const QString& message);
@@ -125,6 +133,11 @@ private:
     float confThreshold_;
     float nmsThreshold_;
     std::unordered_map<int, int> logFrameCounts_;
+    std::unordered_map<int, float> camConfThresholds_;
+    std::unordered_map<int, float> camNmsThresholds_;
+    std::unordered_map<int, QString> cameraSources_;
+    std::unordered_map<int, QString> cameraAliases_;
+    int prevActiveCam_ = -1;
 };
 
 #endif // MAINWINDOW_HPP

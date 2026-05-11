@@ -27,6 +27,8 @@
 // 录制会话(每个摄像头一个)
 struct RecordingSession {
     int cameraId = 0;
+    QString alias;              // 摄像头别名
+    QString source;             // 摄像头源地址(用于文件夹命名)
     QString videoPath;          // 当前录像文件路径
     cv::VideoWriter writer;     // OpenCV 录像 writer
     bool isRecording = false;
@@ -62,7 +64,7 @@ public:
      * @param fps 帧率(默认 30)
      * @return 成功返回 true
      */
-    bool startRecording(int cameraId, double fps = 30.0);
+    bool startRecording(int cameraId, double fps = 30.0, const QString& alias = {}, const QString& source = {});
 
     /**
      * @brief 停止录制

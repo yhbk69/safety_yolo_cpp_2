@@ -26,6 +26,8 @@
 #include <QFile>
 #include <QInputDialog>
 #include <QDialog>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QDialogButtonBox>
 
 #include <filesystem>
@@ -60,6 +62,35 @@ MainWindow::MainWindow(QWidget *parent)
     statusBar()->addPermanentWidget(timeLabel_);
 
     setupConnections();
+
+    // 摄像头列表
+    cameraListWidget_ = new QListWidget(this);
+    cameraListWidget_->setMaximumHeight(150);
+    cameraListWidget_->setContextMenuPolicy(Qt::CustomContextMenu);
+    cameraListWidget_->setStyleSheet(
+        "QListWidget { font-size: 16px; background-color: #1e1e1e; border: 1px solid #444; border-radius: 4px; }"
+        "QListWidget::item { padding: 2px; }"
+        "QListWidget::item:selected { background-color: #2a3f5f; }");
+    {
+        auto* rightLayout = qobject_cast<QVBoxLayout*>(ui->rightPanel->layout());
+        if (rightLayout) {
+            int idx = rightLayout->indexOf(ui->resultTitleLabel);
+            rightLayout->insertWidget(idx + 1, cameraListWidget_);
+        }
+    }
+    connect(cameraListWidget_, &QListWidget::itemClicked, this, &MainWindow::onCameraListClicked);
+    connect(cameraListWidget_, &QListWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        auto* item = cameraListWidget_->itemAt(pos);
+        if (!item) return;
+        int camId = item->data(Qt::UserRole).toInt();
+        QMenu menu;
+        auto* removeAction = menu.addAction(QString::fromUtf8("移除摄像头 %1").arg(camId));
+        connect(removeAction, &QAction::triggered, this, [this, camId]() {
+            onRemoveCamera(camId);
+        });
+        menu.exec(cameraListWidget_->mapToGlobal(pos));
+    });
+
     statusMessageLabel_->setText("就绪 - 请加载模型后开始检测");
     ui->modelPathEdit->setText(QString::fromStdString(Config::MODEL_PATH));
 
@@ -261,6 +292,7 @@ void MainWindow::onLoadModel() {
         GuiLogger::log(ui->logTextEdit, "模型", QString("模型加载成功: %1").arg(modelPath));
         enableControls(true);
         updateModelButtons(false);
+        autoStartCameras();
     } else {
         ui->modelStatusLabel->setText("✗ 加载失败");
         ui->modelStatusLabel->setStyleSheet("color: red; font-weight: bold;");
@@ -386,6 +418,7 @@ void MainWindow::onOpenCamera(bool checked) {
 
         updateModelButtons(true);
         startCameraWorker(0, "camera_0", "");
+        refreshCameraList();
 
         // 自动开始录制
         QTimer::singleShot(500, this, [this]() {
@@ -414,11 +447,26 @@ void MainWindow::onAddCamera() {
         QLineEdit::Normal, "", &ok);
     if (!ok || source.isEmpty()) return;
 
+    // 输入别名
+    QString alias = QInputDialog::getText(this,
+        QString::fromUtf8("摄像头别名"),
+        QString::fromUtf8("为此摄像头设置别名(便于识别):"),
+        QLineEdit::Normal, source, &ok);
+    if (!ok) alias = source;
+    else if (alias.trimmed().isEmpty()) alias = source;
+
     int camId = cameraManager_->allocateId();
     QString camName = QString("camera_%1").arg(camId);
 
     GuiLogger::log(ui->logTextEdit, "检测", QString("添加摄像头 %1: %2").arg(camId).arg(source));
     activeDisplayCamera_ = camId;
+
+    // 保存到记忆列表(带当前阈值和别名)
+    camConfThresholds_[camId] = confThreshold_;
+    camNmsThresholds_[camId]  = nmsThreshold_;
+    cameraAliases_[camId]     = alias;
+    RuntimeConfig::instance().addCamera({source, alias, confThreshold_, nmsThreshold_});
+    RuntimeConfig::instance().saveToFile(RuntimeConfig::instance().configFilePath());
 
     updateModelButtons(true);
     startCameraWorker(camId, camName, source);
@@ -427,6 +475,8 @@ void MainWindow::onAddCamera() {
     ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
     ui->cameraStatusLabel->setText(QString::fromUtf8("● %1路运行").arg(cameraManager_->count()));
     ui->stopBtn->setEnabled(true);
+
+    refreshCameraList();
 
     // 自动开始录制
     QTimer::singleShot(500, this, [this, camId]() {
@@ -469,13 +519,143 @@ void MainWindow::stopCamera(int cameraId) {
         ui->cameraStatusLabel->setText(QString::fromUtf8("● %1路运行").arg(cameraManager_->count()));
     }
 
+    cameraSources_.erase(cameraId);
+    cameraAliases_.erase(cameraId);
+    camConfThresholds_.erase(cameraId);
+    camNmsThresholds_.erase(cameraId);
+
     GuiLogger::log(ui->logTextEdit, "系统", QString("摄像头 %1 已停止").arg(cameraId));
+    refreshCameraList();
 }
 
 void MainWindow::stopAllCameras() {
     auto ids = cameraManager_->cameraIds();
     for (int id : ids) {
         stopCamera(id);
+    }
+}
+
+void MainWindow::autoStartCameras() {
+    if (!modelManager_->isLoaded()) return;
+    auto& cfg = RuntimeConfig::instance();
+    auto cams = cfg.cameras();
+    if (cams.empty()) return;
+
+    GuiLogger::log(ui->logTextEdit, "系统", QString("自动启动 %1 路摄像头...").arg(cams.size()));
+    for (const auto& cam : cams) {
+        int camId = cameraManager_->allocateId();
+        QString camName = QString("camera_%1").arg(camId);
+        cameraAliases_[camId] = cam.alias;
+        confThreshold_ = cam.confThreshold;
+        nmsThreshold_  = cam.nmsThreshold;
+        camConfThresholds_[camId] = cam.confThreshold;
+        camNmsThresholds_[camId]  = cam.nmsThreshold;
+        startCameraWorker(camId, camName, cam.source);
+    }
+    // 恢复第一路摄像头的阈值到 UI
+    if (!cams.empty()) {
+        confThreshold_ = camConfThresholds_.begin()->second;
+        nmsThreshold_  = camNmsThresholds_.begin()->second;
+    }
+    ui->confSlider->setValue(static_cast<int>(confThreshold_ * 100));
+    ui->nmsSlider->setValue(static_cast<int>(nmsThreshold_ * 100));
+    ui->cameraBtn->setChecked(true);
+    ui->cameraBtn->setText(QString::fromUtf8("关闭摄像头"));
+    ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
+    ui->cameraStatusLabel->setText(QString("● %1路运行").arg(cameraManager_->count()));
+    ui->stopBtn->setEnabled(true);
+    updateModelButtons(true);
+    GuiLogger::log(ui->logTextEdit, "系统", QString("自动启动完成, 当前 %1 路摄像头").arg(cameraManager_->count()));
+    refreshCameraList();
+}
+
+void MainWindow::onCameraListClicked(QListWidgetItem* item) {
+    if (!item) return;
+    activeDisplayCamera_ = item->data(Qt::UserRole).toInt();
+    QString alias = cameraAliases_.count(activeDisplayCamera_) ? cameraAliases_[activeDisplayCamera_] : QString::number(activeDisplayCamera_);
+    GuiLogger::log(ui->logTextEdit, "系统", QString("切换到: %1").arg(alias));
+    // 延迟刷新, 避免在 itemClicked 信号内 clear 列表导致崩溃
+    QTimer::singleShot(0, this, [this]() { refreshCameraList(); });
+    // 切换后同步阈值
+    auto it = camConfThresholds_.find(activeDisplayCamera_);
+    if (it != camConfThresholds_.end()) {
+        confThreshold_ = it->second;
+        nmsThreshold_  = camNmsThresholds_[activeDisplayCamera_];
+        ui->confSlider->setValue(static_cast<int>(confThreshold_ * 100));
+        ui->nmsSlider->setValue(static_cast<int>(nmsThreshold_ * 100));
+    }
+}
+
+void MainWindow::refreshCameraList() {
+    cameraListWidget_->clear();
+    auto ids = cameraManager_->cameraIds();
+    for (int id : ids) {
+        QString alias = cameraAliases_.count(id) ? cameraAliases_[id] : QString("摄像头 %1").arg(id);
+        QString src = cameraSources_.count(id) ? cameraSources_[id] : "";
+        bool active = (id == activeDisplayCamera_);
+
+        // 自定义 Item Widget
+        auto* container = new QWidget();
+        auto* layout = new QVBoxLayout(container);
+        layout->setContentsMargins(8, 4, 8, 4);
+        layout->setSpacing(0);
+
+        auto* titleRow = new QHBoxLayout();
+        auto* aliasLabel = new QLabel(alias);
+        aliasLabel->setStyleSheet(QString("font-size: 18px; font-weight: bold; color: %1;")
+            .arg(active ? "#2196F3" : "#ffffff"));
+        titleRow->addWidget(aliasLabel);
+
+        if (active) {
+            auto* activeLabel = new QLabel("● 当前");
+            activeLabel->setStyleSheet("font-size: 14px; color: #4CAF50; font-weight: bold; margin-left: 8px;");
+            titleRow->addWidget(activeLabel);
+        }
+        titleRow->addStretch();
+        layout->addLayout(titleRow);
+
+        if (!src.isEmpty()) {
+            QString displaySrc = src;
+            if (displaySrc.length() > 50) displaySrc = displaySrc.left(47) + "...";
+            auto* srcLabel = new QLabel(displaySrc);
+            srcLabel->setStyleSheet("font-size: 13px; color: #888888;");
+            layout->addWidget(srcLabel);
+        }
+
+        // 交替背景色
+        int idx = cameraListWidget_->count();
+        container->setStyleSheet(idx % 2 == 0
+            ? "background-color: #2a2a2a; border-radius: 4px;"
+            : "background-color: #333333; border-radius: 4px;");
+
+        auto* item = new QListWidgetItem(cameraListWidget_);
+        item->setData(Qt::UserRole, id);
+        layout->activate();
+        item->setSizeHint(container->minimumSizeHint());
+        cameraListWidget_->setItemWidget(item, container);
+    }
+}
+
+void MainWindow::savePerCameraThresholds() {
+    auto& cfg = RuntimeConfig::instance();
+    auto cams = cfg.cameras();
+    bool changed = false;
+    for (auto& cam : cams) {
+        for (const auto& [camId, src] : cameraSources_) {
+            if (src == cam.source) {
+                auto it = camConfThresholds_.find(camId);
+                if (it != camConfThresholds_.end()) {
+                    cam.confThreshold = it->second;
+                    cam.nmsThreshold  = camNmsThresholds_[camId];
+                    changed = true;
+                }
+                break;
+            }
+        }
+    }
+    if (changed) {
+        cfg.setCameras(cams);
+        cfg.saveToFile(cfg.configFilePath());
     }
 }
 
@@ -488,13 +668,13 @@ void MainWindow::startCameraWorker(int cameraId, const QString& name, const QStr
     connect(worker, &InferenceWorker::alertSaved, this, &MainWindow::onAlertSaved);
     connect(worker, &InferenceWorker::finished, this, &MainWindow::onWorkerFinished);
     connect(worker, &InferenceWorker::errorOccurred, this, &MainWindow::onWorkerError);
-    connect(thread, &QThread::started, worker, [this, worker, source, cameraId]() {
+    connect(thread, &QThread::started, worker, [this, worker, source, cameraId, ct = confThreshold_, nt = nmsThreshold_]() {
         worker->setBatchInference(ui->batchInferenceCheck->isChecked());
-        worker->process(std::make_unique<CameraVideoSource>(cameraId, source),
-                        confThreshold_, nmsThreshold_);
+        worker->process(std::make_unique<CameraVideoSource>(cameraId, source), ct, nt);
     });
     connect(thread, &QThread::finished, worker, &QObject::deleteLater);
 
+    cameraSources_[cameraId] = source;
     cameraManager_->add(cameraId, thread, worker);
     thread->start();
 }
@@ -570,6 +750,18 @@ void MainWindow::onFrameProcessed(int cameraId, QImage image, std::vector<Detect
         sink->onFrame(fd);
     }
 
+    // 切换活跃摄像头时同步阈值滑块
+    if (cameraId >= 0 && cameraId != prevActiveCam_) {
+        prevActiveCam_ = cameraId;
+        auto it = camConfThresholds_.find(cameraId);
+        if (it != camConfThresholds_.end()) {
+            confThreshold_ = it->second;
+            nmsThreshold_  = camNmsThresholds_[cameraId];
+            ui->confSlider->setValue(static_cast<int>(confThreshold_ * 100));
+            ui->nmsSlider->setValue(static_cast<int>(nmsThreshold_ * 100));
+        }
+    }
+
     // 只更新当前活跃显示的摄像头画面
     if (cameraId == activeDisplayCamera_) {
         updateDisplay(image);
@@ -625,11 +817,19 @@ void MainWindow::onWorkerError(int cameraId, const QString& message) {
 void MainWindow::onConfThresholdChanged(int value) {
     confThreshold_ = value / 100.0f;
     updateThresholdLabels();
+    if (activeDisplayCamera_ >= 0 && camConfThresholds_.count(activeDisplayCamera_)) {
+        camConfThresholds_[activeDisplayCamera_] = confThreshold_;
+        savePerCameraThresholds();
+    }
 }
 
 void MainWindow::onNmsThresholdChanged(int value) {
     nmsThreshold_ = value / 100.0f;
     updateThresholdLabels();
+    if (activeDisplayCamera_ >= 0 && camNmsThresholds_.count(activeDisplayCamera_)) {
+        camNmsThresholds_[activeDisplayCamera_] = nmsThreshold_;
+        savePerCameraThresholds();
+    }
 }
 
 void MainWindow::updateThresholdLabels() {
@@ -722,7 +922,9 @@ void MainWindow::onStartRecording() {
         QMessageBox::warning(this, QString::fromUtf8("录像"), QString::fromUtf8("请先打开一个摄像头"));
         return;
     }
-    videoRecorder_->startRecording(cameraId);
+    QString alias = cameraAliases_.count(cameraId) ? cameraAliases_[cameraId] : QString();
+    QString source = cameraSources_.count(cameraId) ? cameraSources_[cameraId] : QString();
+    videoRecorder_->startRecording(cameraId, 30.0, alias, source);
 }
 
 void MainWindow::onStopRecording() {

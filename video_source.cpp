@@ -25,6 +25,8 @@ CameraVideoSource::CameraVideoSource(int cameraId, const QString& source) {
     }
     if (cap_.isOpened()) {
         cap_.set(cv::CAP_PROP_BUFFERSIZE, 1);
+        // 设置读取超时, 避免网络断开时 cap_.read() 永久阻塞
+        cap_.set(cv::CAP_PROP_OPEN_TIMEOUT_MSEC, 3000);
     }
 }
 
