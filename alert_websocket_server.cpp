@@ -3,10 +3,16 @@
 #include <QObject>
 #include <QHostAddress>
 #include <QFileInfo>
+#include <QDateTime>
 
 AlertWebSocketServer::AlertWebSocketServer()
     : connCtx_(new QObject())
+    , ackTimer_(new QTimer(connCtx_))
 {
+    QObject::connect(ackTimer_, &QTimer::timeout, connCtx_, [this]() {
+        checkPendingAlarms();
+    });
+    ackTimer_->start(ACK_CHECK_INTERVAL_MS);
 }
 
 AlertWebSocketServer::~AlertWebSocketServer() {
@@ -50,6 +56,7 @@ void AlertWebSocketServer::stop() {
         QMutexLocker locker(&mutex_);
         toClose = clients_;
         clients_.clear();
+        pendingAlarms_.clear();  // 清理待确认告警
     }
     for (auto* client : toClose) {
         if (client) {
@@ -69,12 +76,15 @@ int AlertWebSocketServer::clientCount() const {
 }
 
 void AlertWebSocketServer::onAlert(const AlertData& data) {
+    qInfo() << "[告警服务器] *** onAlert 被调用! video=" << data.videoPath << ", image=" << data.imagePath;
     pushAlert(data);
 }
 
 void AlertWebSocketServer::pushAlert(const AlertData& data) {
+    qInfo() << "[告警服务器] pushAlert 开始执行";
     QMutexLocker locker(&mutex_);
     if (clients_.isEmpty()) {
+        qInfo() << "[告警服务器] pushAlert: 无客户端连接, 丢弃告警";
         if (logCallback_) {
             logCallback_(QStringLiteral("告警"), QStringLiteral("无客户端连接, 丢弃告警"));
         }
@@ -87,25 +97,64 @@ void AlertWebSocketServer::pushAlert(const AlertData& data) {
         return;
     }
 
-    if (logCallback_) {
-        logCallback_(QStringLiteral("告警"), QStringLiteral("开始推送告警: imagePath=%1, videoPath=%2").arg(data.imagePath).arg(data.videoPath));
+    // 解析 alarm_id
+    QJsonDocument doc = QJsonDocument::fromJson(data.alertJson.toUtf8());
+    if (doc.isNull() || !doc.isObject()) {
+        if (logCallback_) {
+            logCallback_(QStringLiteral("告警"), QStringLiteral("告警JSON格式错误"));
+        }
+        return;
     }
 
+    QString alarmId = doc.object()["data"].toObject()["alarm_id"].toString();
+    if (alarmId.isEmpty()) {
+        if (logCallback_) {
+            logCallback_(QStringLiteral("告警"), QStringLiteral("告警缺少 alarm_id 字段"));
+        }
+        return;
+    }
+
+    if (logCallback_) {
+        logCallback_(QStringLiteral("告警"), QString("开始处理告警: alarmId=%1, imagePath=%2, videoPath=%3").arg(alarmId).arg(data.imagePath).arg(data.videoPath));
+    }
+
+    // 创建待确认告警
+    PendingAlarm pending;
+    pending.alarmId = alarmId;
+    pending.alertJson = data.alertJson.toUtf8();
+    pending.imagePath = data.imagePath;
+    pending.videoPath = data.videoPath;
+    pending.retryCount = 0;
+
+    pendingAlarms_.append(pending);
+
+    // 立即发送
+    sendAlarmToClients(pendingAlarms_.last());
+
+    if (logCallback_) {
+        logCallback_(QStringLiteral("告警"), QString("告警已推送: %1 (等待ACK, 最多重试%2次)").arg(alarmId).arg(PendingAlarm::MAX_RETRIES));
+    }
+}
+
+void AlertWebSocketServer::sendAlarmToClients(const PendingAlarm& alarm) {
+    if (logCallback_) {
+        logCallback_(QStringLiteral("告警"), QString("开始发送告警[%1]: 客户端数=%2, 图片=%3, 视频=%4").arg(alarm.alarmId).arg(clients_.size()).arg(alarm.imagePath).arg(alarm.videoPath));
+    }
     // 1. 发送告警元数据 (JSON 文本帧)
     int sentCount = 0;
     for (auto* client : clients_) {
         if (client && client->state() == QAbstractSocket::ConnectedState) {
-            client->sendTextMessage(data.alertJson);
+            client->sendTextMessage(alarm.alertJson);
             sentCount++;
         }
     }
-    if (logCallback_) {
-        logCallback_(QStringLiteral("告警"), QStringLiteral("已发送告警元数据到 %1 个客户端").arg(sentCount));
+    if (logCallback_ && sentCount > 0) {
+        logCallback_(QStringLiteral("告警"), QString("已发送告警元数据[%1]到 %2 个客户端").arg(alarm.alarmId).arg(sentCount));
     }
 
     // 2. 发送告警截图 (二进制 JPEG)
-    if (!data.imagePath.isEmpty()) {
-        QFile imgFile(data.imagePath);
+    if (!alarm.imagePath.isEmpty()) {
+        QFile imgFile(alarm.imagePath);
         if (imgFile.open(QIODevice::ReadOnly)) {
             QByteArray imgData = imgFile.readAll();
             imgFile.close();
@@ -117,18 +166,22 @@ void AlertWebSocketServer::pushAlert(const AlertData& data) {
                         imgSent++;
                     }
                 }
-                if (logCallback_) {
-                    logCallback_(QStringLiteral("告警"), QStringLiteral("已推送截图(%1 bytes)到 %2 个客户端").arg(imgData.size()).arg(imgSent));
+                if (logCallback_ && imgSent > 0) {
+                    logCallback_(QStringLiteral("告警"), QString("已推送截图[%1](%2 bytes)到 %3 个客户端").arg(alarm.alarmId).arg(imgData.size()).arg(imgSent));
+                } else if (logCallback_ && imgSent == 0) {
+                    logCallback_(QStringLiteral("告警"), QString("截图推送失败[%1]: 无可用客户端").arg(alarm.alarmId));
                 }
+            } else if (logCallback_) {
+                logCallback_(QStringLiteral("告警"), QString("截图文件为空[%1]").arg(alarm.alarmId));
             }
         } else if (logCallback_) {
-            logCallback_(QStringLiteral("告警"), QStringLiteral("无法打开截图文件: %1").arg(data.imagePath));
+            logCallback_(QStringLiteral("告警"), QString("无法打开截图文件: %1").arg(alarm.imagePath));
         }
     }
 
     // 3. 发送告警视频 (二进制 MP4)
-    if (!data.videoPath.isEmpty()) {
-        QFile vidFile(data.videoPath);
+    if (!alarm.videoPath.isEmpty()) {
+        QFile vidFile(alarm.videoPath);
         if (vidFile.open(QIODevice::ReadOnly)) {
             QByteArray vidData = vidFile.readAll();
             vidFile.close();
@@ -140,12 +193,46 @@ void AlertWebSocketServer::pushAlert(const AlertData& data) {
                         vidSent++;
                     }
                 }
-                if (logCallback_) {
-                    logCallback_(QStringLiteral("告警"), QStringLiteral("已推送视频(%1 bytes)到 %2 个客户端").arg(vidData.size()).arg(vidSent));
+                if (logCallback_ && vidSent > 0) {
+                    logCallback_(QStringLiteral("告警"), QString("已推送视频[%1](%2 bytes)到 %3 个客户端").arg(alarm.alarmId).arg(vidData.size()).arg(vidSent));
+                } else if (logCallback_ && vidSent == 0) {
+                    logCallback_(QStringLiteral("告警"), QString("视频推送失败[%1]: 无可用客户端").arg(alarm.alarmId));
                 }
+            } else if (logCallback_) {
+                logCallback_(QStringLiteral("告警"), QString("视频文件为空[%1]").arg(alarm.alarmId));
             }
         } else if (logCallback_) {
-            logCallback_(QStringLiteral("告警"), QStringLiteral("无法打开视频文件: %1").arg(data.videoPath));
+            logCallback_(QStringLiteral("告警"), QString("无法打开视频文件: %1").arg(alarm.videoPath));
+        }
+    }
+}
+
+void AlertWebSocketServer::checkPendingAlarms() {
+    QMutexLocker locker(&mutex_);
+    if (pendingAlarms_.isEmpty()) return;
+    if (clients_.isEmpty()) {
+        if (logCallback_) {
+            logCallback_(QStringLiteral("告警"), QStringLiteral("无客户端, 跳过ACK检查"));
+        }
+        return;
+    }
+
+    for (int i = pendingAlarms_.size() - 1; i >= 0; --i) {
+        PendingAlarm& alarm = pendingAlarms_[i];
+        alarm.retryCount++;
+
+        if (alarm.retryCount >= PendingAlarm::MAX_RETRIES) {
+            // 超过最大重试次数, 放弃
+            if (logCallback_) {
+                logCallback_(QStringLiteral("告警"), QString("告警[%1]已重试%2次, 超时放弃").arg(alarm.alarmId).arg(alarm.retryCount));
+            }
+            pendingAlarms_.removeAt(i);
+        } else {
+            // 重传
+            if (logCallback_) {
+                logCallback_(QStringLiteral("告警"), QString("告警[%1]未收到ACK, 第%2次重传").arg(alarm.alarmId).arg(alarm.retryCount));
+            }
+            sendAlarmToClients(alarm);
         }
     }
 }
@@ -158,22 +245,58 @@ void AlertWebSocketServer::onNewConnection() {
     auto* socket = server_->nextPendingConnection();
     if (!socket) return;
 
+    QString peerIp = socket->peerAddress().toString();
+    quint16 peerPort = socket->peerPort();
+
     {
         QMutexLocker locker(&mutex_);
         clients_.append(socket);
     }
+
+    QObject::connect(socket, &QWebSocket::textMessageReceived, connCtx_, [this, socket](const QString& message) {
+        onTextMessageReceived(socket, message);
+    });
 
     QObject::connect(socket, &QWebSocket::disconnected, connCtx_, [this, socket]() {
         onClientDisconnected(socket);
     });
 
     if (logCallback_) {
-        logCallback_(QStringLiteral("告警"), QStringLiteral("新客户端已连接"));
+        QMutexLocker locker(&mutex_);
+        logCallback_(QStringLiteral("告警"), QString("新客户端已连接 [%1:%2], 当前连接数: %3").arg(peerIp).arg(peerPort).arg(clients_.size()));
+    }
+}
+
+void AlertWebSocketServer::onTextMessageReceived(QWebSocket* socket, const QString& message) {
+    QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8());
+    if (doc.isNull()) return;
+
+    QJsonObject obj = doc.object();
+    QString type = obj["type"].toString();
+
+    // 处理 ACK
+    if (type == "ack") {
+        QString alarmId = obj["alarm_id"].toString();
+        if (alarmId.isEmpty()) return;
+
+        QMutexLocker locker(&mutex_);
+        for (int i = 0; i < pendingAlarms_.size(); ++i) {
+            if (pendingAlarms_[i].alarmId == alarmId) {
+                pendingAlarms_.removeAt(i);
+                if (logCallback_) {
+                    logCallback_(QStringLiteral("告警"), QString("告警已确认(ACK): %1").arg(alarmId));
+                }
+                return;
+            }
+        }
     }
 }
 
 void AlertWebSocketServer::onClientDisconnected(QWebSocket* socket) {
     if (!socket) return;
+
+    QString peerIp = socket->peerAddress().toString();
+    quint16 peerPort = socket->peerPort();
 
     {
         QMutexLocker locker(&mutex_);
@@ -181,7 +304,7 @@ void AlertWebSocketServer::onClientDisconnected(QWebSocket* socket) {
     }
 
     if (logCallback_) {
-        logCallback_(QStringLiteral("告警"), QStringLiteral("客户端已断开"));
+        logCallback_(QStringLiteral("告警"), QString("客户端已断开 [%1:%2]").arg(peerIp).arg(peerPort));
     }
 
     socket->deleteLater();

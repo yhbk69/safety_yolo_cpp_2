@@ -66,11 +66,14 @@ namespace Config {
     // 本机 IP(仅作为自动获取失败时的回退值, 运行时优先自动获取)
     const std::string HOST_IP = "192.168.124.28";
 
-    // 告警推送 WebSocket 端口
-    constexpr int ALERT_WS_PORT = 9091;
+    // 告警推送 WebSocket 端口 (与控制通道共用 9090)
+    constexpr int ALERT_WS_PORT = 9090;
 
     // 实时视频流 WebSocket 端口
     constexpr int STREAM_PORT = 9092;
+
+    // HTTP 文件服务器端口(用于下载告警视频/图片)
+    constexpr int HTTP_PORT = 9091;
 
     // ACK 等待超时(毫秒), 超时后重发
     constexpr int ACK_TIMEOUT_MS = 5000;

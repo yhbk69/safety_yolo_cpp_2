@@ -13,6 +13,7 @@
 #include "alert_websocket_server.hpp"
 #include "websocket_manager.hpp"
 #include "video_recorder.hpp"
+#include "http_file_server.hpp"
 
 #include <QAction>
 #include <QFileDialog>
@@ -160,16 +161,7 @@ MainWindow::MainWindow(QWidget *parent)
         sinks_.push_back(std::move(vs));
     }
 
-    // 初始化告警推送 WebSocket (端口 9091, 告警元数据+图片+视频)
-    {
-        auto aws = std::make_unique<AlertWebSocketServer>();
-        aws->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
-        auto& cfg = RuntimeConfig::instance();
-        aws->start((quint16)cfg.alertWsPort());
-        sinks_.push_back(std::move(aws));
-    }
-
-    // 初始化 WebSocket 控制通道 (端口 9090, 心跳/信息/控制)
+    // 初始化 WebSocket 控制通道 (端口 9090, 心跳/信息/控制/告警)
     {
         auto ws = std::make_unique<WebSocketManager>();
         ws->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
@@ -197,11 +189,20 @@ MainWindow::MainWindow(QWidget *parent)
         ws->start();
         sinks_.push_back(std::move(ws));
     }
-    wsAddressLabel_->setText(QString("ws://%1:%2|%3|%4")
+    wsAddressLabel_->setText(QString("ws://%1:%2|http:%3")
         .arg(QString::fromStdString(Config::HOST_IP))
         .arg(Config::WEBSOCKET_PORT)
-        .arg(Config::ALERT_WS_PORT)
-        .arg(Config::STREAM_PORT));
+        .arg(Config::HTTP_PORT));
+
+    // 初始化 HTTP 文件服务器 (端口 9091, 告警文件下载)
+    {
+        httpFileServer_ = new HttpFileServer();
+        httpFileServer_->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
+        // 确保输出目录存在
+        QDir().mkpath(QString::fromStdString(Config::OUTPUT_DIR));
+        httpFileServer_->start(static_cast<quint16>(Config::HTTP_PORT), 
+                               QString::fromStdString(Config::OUTPUT_DIR));
+    }
 
     // 初始化 VideoRecorder
     {
@@ -273,6 +274,13 @@ MainWindow::~MainWindow() {
         }
     }
 
+    // 清理 HTTP 文件服务器
+    if (httpFileServer_) {
+        httpFileServer_->stop();
+        delete httpFileServer_;
+        httpFileServer_ = nullptr;
+    }
+
     delete ui;
 }
 
@@ -313,15 +321,18 @@ void MainWindow::setupConnections() {
 // ============================================================
 void MainWindow::onAlertSaved(int cameraId, const QString& videoPath, const QString& imagePath,
                                const QString& alertJson) {
-    AlertData ad;
-    ad.cameraId = cameraId;
-    ad.alertJson = alertJson;
-    ad.imagePath = imagePath;
-    ad.videoPath = videoPath;
+    qDebug() << "[MainWindow] onAlertSaved 被调用! cameraId=" << cameraId;
+    
+    // 通过 WebSocketManager (9090) 推送告警
     for (auto& sink : sinks_) {
-        sink->onAlert(ad);
+        auto* ws = dynamic_cast<WebSocketManager*>(sink.get());
+        if (ws) {
+            ws->pushAlarm(alertJson);
+            break;
+        }
     }
-    GuiLogger::log(ui->logTextEdit, QStringLiteral("告警"), QStringLiteral("告警已推送: %1").arg(cameraId));
+    
+    GuiLogger::log(ui->logTextEdit, QStringLiteral("告警"), QStringLiteral("告警已推送: camera%1").arg(cameraId));
 }
 
 // ============================================================
@@ -794,8 +805,9 @@ void MainWindow::startCameraWorker(int cameraId, const QString& name, const QStr
     auto* worker = new InferenceWorker(modelManager_->engine(), cameraId, name);
     worker->moveToThread(thread);
 
+    bool ok = connect(worker, &InferenceWorker::alertSaved, this, &MainWindow::onAlertSaved, Qt::QueuedConnection);
+    qDebug() << "[DEBUG] alertSaved 连接状态:" << ok;
     connect(worker, &InferenceWorker::frameProcessed, this, &MainWindow::onFrameProcessed);
-    connect(worker, &InferenceWorker::alertSaved, this, &MainWindow::onAlertSaved);
     connect(worker, &InferenceWorker::finished, this, &MainWindow::onWorkerFinished);
     connect(worker, &InferenceWorker::errorOccurred, this, &MainWindow::onWorkerError);
     connect(thread, &QThread::started, worker, [this, worker, thread, source, cameraId, ct = confThreshold_, nt = nmsThreshold_]() {

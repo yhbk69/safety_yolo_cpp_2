@@ -101,6 +101,30 @@ void WebSocketManager::broadcast(const QString& message) {
 }
 
 // ============================================================
+// 告警推送
+// ============================================================
+
+void WebSocketManager::pushAlarm(const QString& alarmJson) {
+    QMutexLocker locker(&mutex_);
+    if (clients_.isEmpty()) {
+        if (logCallback_) {
+            logCallback_("WS", "告警推送: 无客户端连接, 丢弃");
+        }
+        return;
+    }
+    int sentCount = 0;
+    for (auto* client : clients_) {
+        if (client && client->state() == QAbstractSocket::ConnectedState) {
+            client->sendTextMessage(alarmJson);
+            sentCount++;
+        }
+    }
+    if (logCallback_) {
+        logCallback_("WS", QString("告警已推送到 %1 个客户端").arg(sentCount));
+    }
+}
+
+// ============================================================
 // 围栏管理
 // ============================================================
 
@@ -146,6 +170,9 @@ void WebSocketManager::onNewConnection() {
     auto* socket = server_->nextPendingConnection();
     if (!socket) return;
 
+    QString peerIp = socket->peerAddress().toString();
+    quint16 peerPort = socket->peerPort();
+
     {
         QMutexLocker locker(&mutex_);
         clients_.append(socket);
@@ -161,7 +188,7 @@ void WebSocketManager::onNewConnection() {
 
     if (logCallback_) {
         QMutexLocker locker(&mutex_);
-        logCallback_("WS", QString("客户端已连接, 当前连接数: %1").arg(clients_.size()));
+        logCallback_("WS", QString("客户端已连接 [%1:%2], 当前连接数: %3").arg(peerIp).arg(peerPort).arg(clients_.size()));
     }
 }
 
@@ -208,6 +235,14 @@ void WebSocketManager::onTextMessageForClient(QWebSocket* client, const QString&
         return;
     }
 
+    // 处理告警 ACK
+    if (type == "ack") {
+        QString alarmId = obj["alarm_id"].toString();
+        if (logCallback_) {
+            logCallback_("WS", QString("收到告警ACK: %1").arg(alarmId));
+        }
+        return;
+    }
 }
 
 void WebSocketManager::handlePing(QWebSocket* client) {

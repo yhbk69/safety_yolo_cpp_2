@@ -19,25 +19,39 @@ HttpFileServer::HttpFileServer()
 }
 
 HttpFileServer::~HttpFileServer() {
-    stop();
+    // 先关闭并清理 server_, 但不触发 deleteLater (直接删除)
+    if (server_) {
+        server_->close();
+        // 注意: 不调用 deleteLater, 因为我们要直接销毁整个对象
+        server_->disconnect();
+        delete server_;
+        server_ = nullptr;
+    }
     delete connCtx_;
+    connCtx_ = nullptr;
 }
 
 void HttpFileServer::init() {
     // 使用 Config 中的默认配置
-    quint16 defaultPort = static_cast<quint16>(Config::zHTTP_PORT);
+    quint16 defaultPort = static_cast<quint16>(Config::HTTP_PORT);
     QString defaultDir = QString::fromStdString(Config::OUTPUT_DIR);
     start(defaultPort, defaultDir);
 }
 
 void HttpFileServer::start(quint16 port, const QString& rootDir) {
+    // 先停止旧服务(不带锁,避免死锁)
+    if (server_) {
+        server_->close();
+        server_->disconnect();
+        delete server_;
+        server_ = nullptr;
+    }
+
     QMutexLocker locker(&mutex_);
 
     // 如果参数为默认值,使用 Config 中的值
     quint16 actualPort = (port == 0) ? static_cast<quint16>(Config::HTTP_PORT) : port;
     QString actualDir = rootDir.isEmpty() ? QString::fromStdString(Config::OUTPUT_DIR) : rootDir;
-
-    stop();
 
     rootDir_ = actualDir;
     port_ = actualPort;
@@ -64,7 +78,8 @@ void HttpFileServer::stop() {
 
     if (server_) {
         server_->close();
-        server_->deleteLater();
+        server_->disconnect();
+        delete server_;
         server_ = nullptr;
     }
 }

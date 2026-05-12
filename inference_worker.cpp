@@ -12,6 +12,7 @@
 #include <QDateTime>
 #include <QBuffer>
 #include <QThread>
+#include <QDebug>
 #include <cstdint>
 
 InferenceWorker::InferenceWorker(IEngine* engine, int cameraId,
@@ -101,12 +102,39 @@ InferenceWorker::FrameResult InferenceWorker::processOneFrame(
             batchCounter_ = 0;
         } else {
             // 未满batch返回空检测
-            FrameResult result;
             auto displayImg = std::make_shared<cv::Mat>(frame.clone());
             Postprocessor::drawDetections(*displayImg, detections);
+
+            // 环形缓冲区
+            {
+                std::lock_guard<std::mutex> lock(bufferMutex_);
+                frameBuffer_.push_back(displayImg);
+                if (frameBuffer_.size() > Config::RING_BUFFER_FRAMES) {
+                    frameBuffer_.pop_front();
+                }
+            }
+
+            // 仍需检查告警(即使没有检测结果)
+            checkAlert(detections, displayImg);
+
+            // 告警录制后续帧
+            if (alertRecording_ && alertRemainingFrames_ > 0) {
+                alertBuffer_.push_back(displayImg);
+                alertRemainingFrames_--;
+                if (alertRemainingFrames_ == 0) {
+                    saveAlertFiles(QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                  pendingAlarmType_);
+                    alertRecording_ = false;
+                    alertBuffer_.clear();
+                    pendingAlarmType_.clear();
+                }
+            }
+
             cv::cvtColor(*displayImg, *displayImg, cv::COLOR_BGR2RGB);
             QImage qimg(displayImg->data, displayImg->cols, displayImg->rows,
                         displayImg->step, QImage::Format_RGB888);
+
+            FrameResult result;
             result.image = qimg.copy();
             result.detections = std::move(detections);
             return result;
@@ -163,13 +191,20 @@ void InferenceWorker::checkAlert(
         if (it != lastAlertTime_.end()) {
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - it->second).count();
-            if (elapsed < Config::ALERT_COOLDOWN_MS) continue;
+            if (elapsed < Config::ALERT_COOLDOWN_MS) {
+                // 冷却中, 跳过
+                continue;
+            }
         }
         lastAlertTime_[det.class_id] = now;
 
+        // 触发告警, 开始录制
         alertRecording_ = true;
         alertRemainingFrames_ = Config::ALERT_AFTER_FRAMES;
         pendingAlarmType_ = QString::fromStdString(name);
+
+        qDebug() << "[InferenceWorker] 触发告警! camera=" << cameraName_
+                 << ", type=" << QString::fromStdString(name) << ", 开始录制" << Config::ALERT_AFTER_FRAMES << "帧";
 
         {
             std::lock_guard<std::mutex> lock(bufferMutex_);
@@ -216,10 +251,10 @@ void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alar
     data["alarm_id"]   = alarmId;
     data["alarm_type"] = alarmType;
     data["timestamp"]  = QDateTime::currentDateTime().toMSecsSinceEpoch();
-    data["video_url"]  = QString("ws://%1:%2/%3").arg(
-        hostIp).arg(Config::ALERT_WS_PORT).arg(baseName + ".mp4");
-    data["image_url"]  = QString("ws://%1:%2/%3").arg(
-        hostIp).arg(Config::ALERT_WS_PORT).arg(baseName + ".jpg");
+    data["video_url"]  = QString("http://%1:%2/%3").arg(
+        hostIp).arg(Config::HTTP_PORT).arg(baseName + ".mp4");
+    data["image_url"]  = QString("http://%1:%2/%3").arg(
+        hostIp).arg(Config::HTTP_PORT).arg(baseName + ".jpg");
 
     QJsonObject root;
     root["type"] = "alarm";
@@ -227,6 +262,9 @@ void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alar
 
     QString alertJson = QString::fromUtf8(
         QJsonDocument(root).toJson(QJsonDocument::Compact));
+
+    qDebug() << "[InferenceWorker] 告警文件已保存: video=" << videoPath
+             << ", image=" << imagePath;
 
     emit alertSaved(cameraId_, videoPath, imagePath, alertJson);
 }

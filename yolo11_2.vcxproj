@@ -239,6 +239,7 @@
     <ClCompile Include="video_websocket_server.cpp" />
     <ClCompile Include="alert_websocket_server.cpp" />
     <ClCompile Include="moc_inference_worker.cpp" />
+    <ClCompile Include="http_file_server.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="camera_manager.hpp" />
@@ -263,6 +264,7 @@
     <ClInclude Include="alert_websocket_server.hpp" />
     <ClInclude Include="yolo_trt_engine.hpp" />
     <ClInclude Include="websocket_manager.hpp" />
+    <ClInclude Include="http_file_server.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="mainwindow.ui" />

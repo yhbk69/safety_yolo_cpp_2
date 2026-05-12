@@ -40,6 +40,7 @@
 class VideoRecorder;
 class VideoWebSocketServer;
 class AlertWebSocketServer;
+class HttpFileServer;
 
 namespace Ui { class MainWindow; }
 
@@ -122,6 +123,7 @@ private:
     // 输出通道 (视频流WebSocket, 告警WebSocket, 控制WebSocket, 录像)
     std::vector<std::unique_ptr<IOutputSink>> sinks_;
     VideoRecorder* videoRecorder_ = nullptr;  // 别名, UI 控制用
+    HttpFileServer* httpFileServer_ = nullptr;  // HTTP 文件服务器(非sink)
 
 private slots:
     // 录制相关
