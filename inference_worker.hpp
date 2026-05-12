@@ -96,6 +96,7 @@ private:
     int alertRemainingFrames_ = 0;
     std::deque<std::shared_ptr<cv::Mat>> alertBuffer_;
     QString pendingAlarmType_;
+    std::shared_ptr<cv::Mat> triggerFrame_;  // 触发告警的那一帧(用于截图)
 
     // 告警输出目录
     QString outputDir_;

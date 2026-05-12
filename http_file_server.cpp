@@ -170,9 +170,8 @@ void HttpFileServer::onNewConnection() {
         QByteArray data = file.readAll();
         file.close();
 
-        // 根据扩展名设置 Content-Type
-        QString ext = QFileInfo(fileName).suffix().toLower();
-        QString mime = getMimeType(ext);
+        // 根据扩展名设置 Content-Type (传入完整文件名)
+        QString mime = getMimeType(fileName);
 
         if (logCallback_) {
             logCallback_("HTTP", QString("发送文件: %1 (%2 bytes, MIME=%3)").arg(fileName).arg(data.size()).arg(mime));

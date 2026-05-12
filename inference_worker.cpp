@@ -202,6 +202,7 @@ void InferenceWorker::checkAlert(
         alertRecording_ = true;
         alertRemainingFrames_ = Config::ALERT_AFTER_FRAMES;
         pendingAlarmType_ = QString::fromStdString(name);
+        triggerFrame_ = annotatedFrame;  // 保存触发告警的那一帧
 
         qDebug() << "[InferenceWorker] 触发告警! camera=" << cameraName_
                  << ", type=" << QString::fromStdString(name) << ", 开始录制" << Config::ALERT_AFTER_FRAMES << "帧";
@@ -217,7 +218,14 @@ void InferenceWorker::checkAlert(
 }
 
 void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alarmType) {
-    if (alertBuffer_.empty()) return;
+    qDebug() << "[InferenceWorker] saveAlertFiles 被调用! alarmId=" << alarmId 
+             << ", type=" << alarmType << ", alertBuffer_.size()=" << alertBuffer_.size()
+             << ", outputDir=" << outputDir_;
+    
+    if (alertBuffer_.empty()) {
+        qWarning() << "[InferenceWorker] alertBuffer_ 为空, 跳过保存";
+        return;
+    }
 
     auto toBgr = [](const std::shared_ptr<cv::Mat>& rgbFrame) -> cv::Mat {
         cv::Mat bgr;
@@ -227,11 +235,16 @@ void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alar
 
     int frameW = alertBuffer_.back()->cols;
     int frameH = alertBuffer_.back()->rows;
-    if (frameW <= 0 || frameH <= 0) return;
+    if (frameW <= 0 || frameH <= 0) {
+        qWarning() << "[InferenceWorker] 无效帧尺寸, 跳过保存";
+        return;
+    }
 
     QString baseName = QString("alarm_%1_%2").arg(alarmId).arg(alarmType);
     QString videoPath = outputDir_ + "/" + baseName + ".mp4";
     QString imagePath = outputDir_ + "/" + baseName + ".jpg";
+
+    qDebug() << "[InferenceWorker] 保存路径 video=" << videoPath << ", image=" << imagePath;
 
     int fourcc = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
     cv::VideoWriter writer(videoPath.toStdString(), fourcc, 30.0,
@@ -241,9 +254,19 @@ void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alar
             writer.write(toBgr(f));
         }
         writer.release();
+        qDebug() << "[InferenceWorker] 视频已写入:" << videoPath;
+    } else {
+        qWarning() << "[InferenceWorker] 无法打开视频写入器:" << videoPath;
     }
 
-    cv::imwrite(imagePath.toStdString(), toBgr(alertBuffer_.front()));
+    // 保存触发告警的那一帧作为截图
+    if (triggerFrame_) {
+        bool ok = cv::imwrite(imagePath.toStdString(), toBgr(triggerFrame_));
+        qDebug() << "[InferenceWorker] 截图保存" << (ok ? "成功" : "失败") << ":" << imagePath;
+    } else if (!alertBuffer_.empty()) {
+        qWarning() << "[InferenceWorker] triggerFrame_ 为空, 回退使用 alertBuffer_.back()";
+        cv::imwrite(imagePath.toStdString(), toBgr(alertBuffer_.back()));
+    }
 
     // 构造告警 JSON
     QString hostIp = QString::fromStdString(Config::HOST_IP);
@@ -263,8 +286,11 @@ void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alar
     QString alertJson = QString::fromUtf8(
         QJsonDocument(root).toJson(QJsonDocument::Compact));
 
-    qDebug() << "[InferenceWorker] 告警文件已保存: video=" << videoPath
-             << ", image=" << imagePath;
+    qDebug() << "[InferenceWorker] 告警JSON:" << alertJson;
+    qDebug() << "[InferenceWorker] 发送 alertSaved 信号...";
 
     emit alertSaved(cameraId_, videoPath, imagePath, alertJson);
+    
+    // 清理触发帧, 准备下一次告警
+    triggerFrame_.reset();
 }

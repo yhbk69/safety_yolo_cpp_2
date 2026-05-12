@@ -85,7 +85,7 @@ namespace Config {
     constexpr int ALERT_AFTER_FRAMES = 60;   // ~2s @ 30fps
 
     // 同一类别告警最小间隔(毫秒)
-    constexpr int ALERT_COOLDOWN_MS = 10000;
+    constexpr int ALERT_COOLDOWN_MS = 4000;
 
     // ============================================================
     // 视频录制配置 — 默认值以 RuntimeConfig 为准
