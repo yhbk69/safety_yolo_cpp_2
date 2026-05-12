@@ -216,10 +216,10 @@ void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alar
     data["alarm_id"]   = alarmId;
     data["alarm_type"] = alarmType;
     data["timestamp"]  = QDateTime::currentDateTime().toMSecsSinceEpoch();
-    data["video_url"]  = QString("http://%1:%2/%3").arg(
-        hostIp).arg(Config::HTTP_PORT).arg(baseName + ".mp4");
-    data["image_url"]  = QString("http://%1:%2/%3").arg(
-        hostIp).arg(Config::HTTP_PORT).arg(baseName + ".jpg");
+    data["video_url"]  = QString("ws://%1:%2/%3").arg(
+        hostIp).arg(Config::ALERT_WS_PORT).arg(baseName + ".mp4");
+    data["image_url"]  = QString("ws://%1:%2/%3").arg(
+        hostIp).arg(Config::ALERT_WS_PORT).arg(baseName + ".jpg");
 
     QJsonObject root;
     root["type"] = "alarm";

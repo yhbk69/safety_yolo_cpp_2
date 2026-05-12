@@ -55,14 +55,14 @@ set(SOURCES
     mainwindow.cpp
     gui_logger.cpp
     inference_worker.cpp
-    http_file_server.cpp
     video_source.cpp
     camera_manager.cpp
     model_manager.cpp
     settings_dialog.cpp
-    mjpeg_streamer.cpp
     video_recorder.cpp
     websocket_manager.cpp
+    video_websocket_server.cpp
+    alert_websocket_server.cpp
     inference_manager.cpp
     mainwindow.ui        # Qt UI 布局文件(由 Qt Creator 可视化编辑)
 )
@@ -78,7 +78,6 @@ set(HEADERS
     yolo_trt_engine.hpp
     inference_engine.hpp
     inference_worker.hpp
-    http_file_server.hpp
     video_source.hpp
     output_sink.hpp
     camera_manager.hpp
@@ -89,6 +88,8 @@ set(HEADERS
     settings_dialog.hpp
     video_recorder.hpp
     websocket_manager.hpp
+    video_websocket_server.hpp
+    alert_websocket_server.hpp
     rknn_inference_engine.hpp
 )
 

@@ -25,7 +25,7 @@ HttpFileServer::~HttpFileServer() {
 
 void HttpFileServer::init() {
     // 使用 Config 中的默认配置
-    quint16 defaultPort = static_cast<quint16>(Config::HTTP_PORT);
+    quint16 defaultPort = static_cast<quint16>(Config::zHTTP_PORT);
     QString defaultDir = QString::fromStdString(Config::OUTPUT_DIR);
     start(defaultPort, defaultDir);
 }

@@ -1,7 +1,19 @@
 {
   "permissions": {
     "allow": [
-      "Bash(type *)"
+      "Bash(type *)",
+      "Bash(copy *)",
+      "Bash(chcp *)",
+      "Bash(findstr *)",
+      "Bash(powershell *)",
+      "Bash(git checkout *)",
+      "Bash(cmake *)",
+      "Bash(mkdir *)",
+      "Bash(rmdir *)",
+      "Bash(dir *)",
+      "Bash(\"c:\\qt\\5.15.2\\msvc2019_64\\bin\\moc.exe\" *)",
+      "Bash(select-string *)"
     ]
-  }
+  },
+  "$version": 4
 }

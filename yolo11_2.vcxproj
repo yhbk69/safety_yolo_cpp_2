@@ -226,7 +226,6 @@
   <ItemGroup>
     <ClCompile Include="gui_logger.cpp" />
     <ClCompile Include="inference_worker.cpp" />
-    <ClCompile Include="http_file_server.cpp" />
     <ClCompile Include="video_source.cpp" />
     <ClCompile Include="inference_manager.cpp" />
     <ClCompile Include="main.cpp" />
@@ -234,10 +233,11 @@
     <ClCompile Include="camera_manager.cpp" />
     <ClCompile Include="model_manager.cpp" />
     <ClCompile Include="settings_dialog.cpp" />
-    <ClCompile Include="mjpeg_streamer.cpp" />
     <ClCompile Include="moc_mainwindow.cpp" />
     <ClCompile Include="video_recorder.cpp" />
     <ClCompile Include="websocket_manager.cpp" />
+    <ClCompile Include="video_websocket_server.cpp" />
+    <ClCompile Include="alert_websocket_server.cpp" />
     <ClCompile Include="moc_inference_worker.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -245,13 +245,11 @@
     <ClInclude Include="config.hpp" />
     <ClInclude Include="detection_utils.hpp" />
     <ClInclude Include="gui_logger.hpp" />
-    <ClInclude Include="http_file_server.hpp" />
     <ClInclude Include="inference_engine.hpp" />
     <ClInclude Include="inference_manager.hpp" />
     <ClInclude Include="inference_worker.hpp" />
     <ClInclude Include="logger.hpp" />
     <ClInclude Include="mainwindow.hpp" />
-    <ClInclude Include="mjpeg_streamer.hpp" />
     <ClInclude Include="model_manager.hpp" />
     <ClInclude Include="output_sink.hpp" />
     <ClInclude Include="postprocessor.hpp" />
@@ -261,6 +259,8 @@
     <ClInclude Include="types.hpp" />
     <ClInclude Include="video_recorder.hpp" />
     <ClInclude Include="video_source.hpp" />
+    <ClInclude Include="video_websocket_server.hpp" />
+    <ClInclude Include="alert_websocket_server.hpp" />
     <ClInclude Include="yolo_trt_engine.hpp" />
     <ClInclude Include="websocket_manager.hpp" />
   </ItemGroup>

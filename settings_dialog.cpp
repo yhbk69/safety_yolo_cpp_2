@@ -28,13 +28,13 @@ SettingsDialog::SettingsDialog(const SettingsResult& current, QWidget* parent)
     wsPortSpin_->setRange(1024, 65535); wsPortSpin_->setValue(current.websocketPort);
     layout->addRow(QStringLiteral("WebSocket端口:"), wsPortSpin_);
 
-    httpPortSpin_ = new QSpinBox(this);
-    httpPortSpin_->setRange(1024, 65535); httpPortSpin_->setValue(current.httpPort);
-    layout->addRow(QStringLiteral("HTTP端口:"), httpPortSpin_);
+    alertPortSpin_ = new QSpinBox(this);
+    alertPortSpin_->setRange(1024, 65535); alertPortSpin_->setValue(current.alertPort);
+    layout->addRow(QStringLiteral("告警推送WebSocket端口:"), alertPortSpin_);
 
     streamPortSpin_ = new QSpinBox(this);
     streamPortSpin_->setRange(1024, 65535); streamPortSpin_->setValue(current.streamPort);
-    layout->addRow(QStringLiteral("MJPEG流端口:"), streamPortSpin_);
+    layout->addRow(QStringLiteral("视频流WebSocket端口:"), streamPortSpin_);
 
     // 告警参数
     ackSpin_ = new QSpinBox(this);
@@ -76,7 +76,7 @@ SettingsResult SettingsDialog::result() const {
     r.confThreshold = (float)confSpin_->value();
     r.nmsThreshold = (float)nmsSpin_->value();
     r.websocketPort = wsPortSpin_->value();
-    r.httpPort = httpPortSpin_->value();
+    r.alertPort = alertPortSpin_->value();
     r.streamPort = streamPortSpin_->value();
     r.ackTimeoutMs = ackSpin_->value();
     r.alertCooldownMs = cooldownSpin_->value();

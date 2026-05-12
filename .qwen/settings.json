@@ -11,8 +11,10 @@
       "Bash(mkdir *)",
       "Bash(rmdir *)",
       "Bash(dir *)",
-      "Bash(\"c:\\qt\\5.15.2\\msvc2019_64\\bin\\moc.exe\" *)"
+      "Bash(\"c:\\qt\\5.15.2\\msvc2019_64\\bin\\moc.exe\" *)",
+      "Bash(select-string *)",
+      "Bash(select-object *)"
     ]
   },
-  "$version": 3
+  "$version": 4
 }

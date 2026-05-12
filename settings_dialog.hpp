@@ -12,7 +12,7 @@ struct SettingsResult {
     float confThreshold{};
     float nmsThreshold{};
     int websocketPort{};
-    int httpPort{};
+    int alertPort{};
     int streamPort{};
     int ackTimeoutMs{};
     int alertCooldownMs{};
@@ -32,7 +32,7 @@ private:
     QDoubleSpinBox* confSpin_;
     QDoubleSpinBox* nmsSpin_;
     QSpinBox* wsPortSpin_;
-    QSpinBox* httpPortSpin_;
+    QSpinBox* alertPortSpin_;
     QSpinBox* streamPortSpin_;
     QSpinBox* ackSpin_;
     QSpinBox* cooldownSpin_;

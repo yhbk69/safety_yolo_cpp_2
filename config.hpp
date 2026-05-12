@@ -60,16 +60,16 @@ namespace Config {
     // 此处仅提供编译期访问便利, 修改时请同步更新 RuntimeConfig。
     // ============================================================
 
-    // WebSocket 服务端口
+    // WebSocket 控制通道端口(心跳/信息/控制)
     constexpr int WEBSOCKET_PORT = 9090;
 
     // 本机 IP(仅作为自动获取失败时的回退值, 运行时优先自动获取)
     const std::string HOST_IP = "192.168.124.28";
 
-    // HTTP 文件服务端口(用于 URL 构造)
-    constexpr int HTTP_PORT = 9091;
+    // 告警推送 WebSocket 端口
+    constexpr int ALERT_WS_PORT = 9091;
 
-    // MJPEG 实时流服务端口
+    // 实时视频流 WebSocket 端口
     constexpr int STREAM_PORT = 9092;
 
     // ACK 等待超时(毫秒), 超时后重发

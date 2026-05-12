@@ -9,7 +9,8 @@
 #include "settings_dialog.hpp"
 #include "detection_utils.hpp"
 #include "video_source.hpp"
-#include "mjpeg_streamer.hpp"
+#include "video_websocket_server.hpp"
+#include "alert_websocket_server.hpp"
 #include "websocket_manager.hpp"
 #include "video_recorder.hpp"
 
@@ -150,16 +151,25 @@ MainWindow::MainWindow(QWidget *parent)
     loadRuntimeConfig();
 
 
-    // 初始化 MJPEG 推流服务
+    // 初始化视频流 WebSocket (端口 9092, 实时视频帧推送)
     {
-        auto mjpeg = std::make_unique<MjpegStreamer>();
-        mjpeg->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
+        auto vs = std::make_unique<VideoWebSocketServer>();
+        vs->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
         auto& cfg = RuntimeConfig::instance();
-        mjpeg->start((quint16)cfg.streamPort(), QString::fromStdString(Config::HOST_IP));
-        sinks_.push_back(std::move(mjpeg));
+        vs->start((quint16)cfg.streamPort());
+        sinks_.push_back(std::move(vs));
     }
 
-    // 初始化 WebSocket 管理器
+    // 初始化告警推送 WebSocket (端口 9091, 告警元数据+图片+视频)
+    {
+        auto aws = std::make_unique<AlertWebSocketServer>();
+        aws->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
+        auto& cfg = RuntimeConfig::instance();
+        aws->start((quint16)cfg.alertWsPort());
+        sinks_.push_back(std::move(aws));
+    }
+
+    // 初始化 WebSocket 控制通道 (端口 9090, 心跳/信息/控制)
     {
         auto ws = std::make_unique<WebSocketManager>();
         ws->setLogCallback(GuiLogger::makeLogCallback(ui->logTextEdit));
@@ -170,7 +180,7 @@ MainWindow::MainWindow(QWidget *parent)
                 info.streamId = QString::number(id);
                 auto* w = cameraManager_->worker(id);
                 info.name = w ? w->cameraName() : QString("摄像头%1").arg(id);
-                info.url = QString("http://%1:%2/stream")
+                info.url = QString("ws://%1:%2")
                     .arg(QString::fromStdString(Config::HOST_IP))
                     .arg(RuntimeConfig::instance().streamPort());
                 streams.append(info);
@@ -180,21 +190,18 @@ MainWindow::MainWindow(QWidget *parent)
         ws->setViewStreamCallback([this](const QString& streamId) -> QString {
             int camId = streamId.toInt();
             if (!cameraManager_->contains(camId)) return QString();
-            return QString("http://%1:%2/stream")
+            return QString("ws://%1:%2")
                 .arg(QString::fromStdString(Config::HOST_IP))
                 .arg(RuntimeConfig::instance().streamPort());
         });
         ws->start();
-        ws->setAlarmPushedCallback([this](const QString& alarmType, const QString& alarmId) {
-            statusMessageLabel_->setText(
-                QString("[告警] %1 - 视频已保存, 等待确认").arg(alarmType));
-            GuiLogger::log(ui->logTextEdit, "告警", QString("发送告警: %1, ID: %2").arg(alarmType, alarmId.left(8)));
-        });
         sinks_.push_back(std::move(ws));
     }
-    wsAddressLabel_->setText(QString("WebSocket: ws://%1:%2")
+    wsAddressLabel_->setText(QString("ws://%1:%2|%3|%4")
         .arg(QString::fromStdString(Config::HOST_IP))
-        .arg(Config::WEBSOCKET_PORT));
+        .arg(Config::WEBSOCKET_PORT)
+        .arg(Config::ALERT_WS_PORT)
+        .arg(Config::STREAM_PORT));
 
     // 初始化 VideoRecorder
     {
@@ -266,7 +273,6 @@ MainWindow::~MainWindow() {
         }
     }
 
-    httpFileServer_.reset();
     delete ui;
 }
 
@@ -307,10 +313,15 @@ void MainWindow::setupConnections() {
 // ============================================================
 void MainWindow::onAlertSaved(int cameraId, const QString& videoPath, const QString& imagePath,
                                const QString& alertJson) {
-    AlertData ad{cameraId, alertJson};
+    AlertData ad;
+    ad.cameraId = cameraId;
+    ad.alertJson = alertJson;
+    ad.imagePath = imagePath;
+    ad.videoPath = videoPath;
     for (auto& sink : sinks_) {
         sink->onAlert(ad);
     }
+    GuiLogger::log(ui->logTextEdit, QStringLiteral("告警"), QStringLiteral("告警已推送: %1").arg(cameraId));
 }
 
 // ============================================================
@@ -1152,7 +1163,7 @@ void MainWindow::onSettings() {
         .confThreshold = confThreshold_,
         .nmsThreshold = nmsThreshold_,
         .websocketPort = cfg.websocketPort(),
-        .httpPort = cfg.httpPort(),
+        .alertPort = cfg.alertWsPort(),
         .streamPort = cfg.streamPort(),
         .ackTimeoutMs = cfg.ackTimeoutMs(),
         .alertCooldownMs = cfg.alertCooldownMs(),
@@ -1172,7 +1183,7 @@ void MainWindow::onSettings() {
         cfg.setConfThreshold(r.confThreshold);
         cfg.setIouThreshold(r.nmsThreshold);
         cfg.setWebsocketPort(r.websocketPort);
-        cfg.setHttpPort(r.httpPort);
+        cfg.setAlertWsPort(r.alertPort);
         cfg.setStreamPort(r.streamPort);
         cfg.setAckTimeoutMs(r.ackTimeoutMs);
         cfg.setAlertCooldownMs(r.alertCooldownMs);

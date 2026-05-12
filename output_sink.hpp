@@ -24,6 +24,8 @@ struct FrameData {
 struct AlertData {
     int cameraId;
     QString alertJson;
+    QString imagePath;   // 告警截图 JPEG 本地路径
+    QString videoPath;   // 告警视频 MP4 本地路径
 };
 
 class IOutputSink {

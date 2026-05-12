@@ -1,6 +1,6 @@
 /**
  * @file websocket_manager.cpp
- * @brief WebSocket 服务端管理模块实现
+ * @brief WebSocket 控制通道实现 (端口 9090)
  */
 
 #include "websocket_manager.hpp"
@@ -8,6 +8,7 @@
 #include "runtime_config.hpp"
 #include <QHostAddress>
 #include <QObject>
+#include <QDateTime>
 
 WebSocketManager::WebSocketManager()
     : connCtx_(new QObject())
@@ -25,7 +26,7 @@ void WebSocketManager::start(quint16 port) {
     stop();
 
     port_ = actualPort;
-    server_ = new QWebSocketServer("YOLO11-Alert", QWebSocketServer::NonSecureMode, connCtx_);
+    server_ = new QWebSocketServer("YOLO11-Control", QWebSocketServer::NonSecureMode, connCtx_);
 
     if (!server_->listen(QHostAddress::Any, port_)) {
         if (logCallback_) {
@@ -44,27 +45,23 @@ void WebSocketManager::start(quint16 port) {
 }
 
 void WebSocketManager::stop() {
-    QMutexLocker locker(&mutex_);
-
-    // 清理所有待确认告警的定时器
-    for (auto it = pendingAlarms_.begin(); it != pendingAlarms_.end(); ++it) {
-        if (it.value().retryTimer) {
-            it.value().retryTimer->stop();
-            delete it.value().retryTimer;
-        }
-    }
-    pendingAlarms_.clear();
-
-    // 关闭所有客户端连接
-    for (auto* client : clients_) {
-        client->close();
-    }
-    clients_.clear();
-
-    // 关闭服务器
+    // 先停止服务器, 不再接受新连接
     if (server_) {
         server_->close();
+        delete server_;
         server_ = nullptr;
+    }
+
+    // 关闭所有客户端连接 (释放锁后再关闭, 避免 deadlock)
+    QList<QWebSocket*> toClose;
+    {
+        QMutexLocker locker(&mutex_);
+        toClose = clients_;
+        clients_.clear();
+    }
+    for (auto* client : toClose) {
+        client->close();
+        client->deleteLater();
     }
 }
 
@@ -93,117 +90,13 @@ void WebSocketManager::setViewStreamCallback(std::function<QString(const QString
 }
 
 // ============================================================
-// 消息广播与告警管理
+// 消息广播
 // ============================================================
-
-void WebSocketManager::onAlert(const AlertData& data) {
-    pushAlarm(data.alertJson);
-}
 
 void WebSocketManager::broadcast(const QString& message) {
     QMutexLocker locker(&mutex_);
     for (auto* client : clients_) {
         client->sendTextMessage(message);
-    }
-}
-
-void WebSocketManager::pushAlarm(const QString& alarmId, const QString& alertJson) {
-    QMutexLocker locker(&mutex_);
-
-    // 创建待确认告警
-    PendingAlarm alarm;
-    alarm.jsonMessage = alertJson;
-    alarm.retryTimer = new QTimer();
-    alarm.retryCount = 0;
-
-    QObject::connect(alarm.retryTimer, &QTimer::timeout, [this, alarmId]() {
-        retryAlarm(alarmId);
-    });
-
-    pendingAlarms_[alarmId] = alarm;
-
-    // 立即发送
-    for (auto* client : clients_) {
-        client->sendTextMessage(alertJson);
-    }
-
-    // 启动重试定时器(5秒间隔)
-    alarm.retryTimer->start(5000);
-
-    if (logCallback_) {
-        logCallback_("告警", QString("推送告警: %1").arg(alarmId.left(8)));
-    }
-}
-
-void WebSocketManager::pushAlarm(const QString& alertJson) {
-    QJsonDocument doc = QJsonDocument::fromJson(alertJson.toUtf8());
-    QString alarmId = doc.object()["data"].toObject()["alarm_id"].toString();
-    if (alarmId.isEmpty()) return;
-
-    pushAlarm(alarmId, alertJson);
-
-    if (alarmPushedCallback_) {
-        QString alarmType = doc.object()["data"].toObject()["alarm_type"].toString();
-        alarmPushedCallback_(alarmType, alarmId);
-    }
-}
-
-void WebSocketManager::setAlarmPushedCallback(AlarmPushedCallback callback) {
-    QMutexLocker locker(&mutex_);
-    alarmPushedCallback_ = std::move(callback);
-}
-
-void WebSocketManager::ackAlarm(const QString& alarmId) {
-    QMutexLocker locker(&mutex_);
-
-    auto it = pendingAlarms_.find(alarmId);
-    if (it != pendingAlarms_.end()) {
-        if (it->retryTimer) {
-            it->retryTimer->stop();
-            delete it->retryTimer;
-        }
-        pendingAlarms_.erase(it);
-
-        if (logCallback_) {
-            logCallback_("WS", QString("告警已确认: %1").arg(alarmId.left(8)));
-        }
-    }
-}
-
-QStringList WebSocketManager::pendingAlarmIds() const {
-    QMutexLocker locker(&mutex_);
-    return pendingAlarms_.keys();
-}
-
-void WebSocketManager::syncAlarms(const QString& lastAlarmId) {
-    QMutexLocker locker(&mutex_);
-
-    bool foundLast = lastAlarmId.isEmpty();
-
-    for (auto it = pendingAlarms_.begin(); it != pendingAlarms_.end(); ++it) {
-        const QString& alarmId = it.key();
-
-        if (!foundLast && alarmId == lastAlarmId) {
-            foundLast = true;
-            continue;
-        }
-
-        if (foundLast) {
-            for (auto* client : clients_) {
-                client->sendTextMessage(it->jsonMessage);
-            }
-            if (logCallback_) {
-                logCallback_("WS", QString("同步推送告警: %1").arg(alarmId.left(8)));
-            }
-        }
-    }
-
-    if (logCallback_) {
-        if (lastAlarmId.isEmpty()) {
-            logCallback_("WS", "同步完成: 推送所有待确认告警");
-        } else {
-            logCallback_("WS", QString("同步完成: last_alarm_id=%1").arg(lastAlarmId.left(8)));
-        }
     }
 }
 
@@ -273,8 +166,17 @@ void WebSocketManager::onNewConnection() {
 }
 
 void WebSocketManager::onTextMessageForClient(QWebSocket* client, const QString& message) {
+    if (logCallback_) {
+        logCallback_("WS", QString("收到消息: %1").arg(message.left(100)));
+    }
+    
     QJsonDocument doc = QJsonDocument::fromJson(message.toUtf8());
-    if (doc.isNull()) return;
+    if (doc.isNull()) {
+        if (logCallback_) {
+            logCallback_("WS", "消息解析失败: 无效JSON");
+        }
+        return;
+    }
 
     QJsonObject obj = doc.object();
     QString type = obj["type"].toString();
@@ -282,13 +184,6 @@ void WebSocketManager::onTextMessageForClient(QWebSocket* client, const QString&
     // 处理 ping 心跳
     if (type == "ping") {
         handlePing(client);
-        return;
-    }
-
-    // 处理 sync_request 同步请求
-    if (type == "sync_request") {
-        QString lastAlarmId = obj["last_alarm_id"].toString();
-        handleSyncRequest(client, lastAlarmId);
         return;
     }
 
@@ -313,47 +208,20 @@ void WebSocketManager::onTextMessageForClient(QWebSocket* client, const QString&
         return;
     }
 
-    // 处理 ack 告警确认
-    if (type == "ack") {
-        QString alarmId = obj["alarm_id"].toString();
-        if (!alarmId.isEmpty()) {
-            ackAlarm(alarmId);
-        }
-        return;
-    }
 }
 
 void WebSocketManager::handlePing(QWebSocket* client) {
     QJsonObject pong;
     pong["type"] = "pong";
-    replyToClient(client, pong);
-
-    if (logCallback_) {
-        logCallback_("WS", "收到 ping, 回复 pong");
-    }
-}
-
-void WebSocketManager::handleSyncRequest(QWebSocket* client, const QString& lastAlarmId) {
-    QMutexLocker locker(&mutex_);
-
-    bool foundLast = lastAlarmId.isEmpty();
-
-    for (auto it = pendingAlarms_.begin(); it != pendingAlarms_.end(); ++it) {
-        const QString& alarmId = it.key();
-        if (!foundLast && alarmId == lastAlarmId) {
-            foundLast = true;
-            continue;
+    
+    if (client && client->state() == QAbstractSocket::ConnectedState) {
+        client->sendTextMessage(QJsonDocument(pong).toJson(QJsonDocument::Compact));
+        if (logCallback_) {
+            logCallback_("WS", "收到 ping, 已回复 pong");
         }
-        if (foundLast) {
-            client->sendTextMessage(it->jsonMessage);
-        }
-    }
-
-    if (logCallback_) {
-        if (lastAlarmId.isEmpty()) {
-            logCallback_("WS", "同步请求: 推送所有待确认告警");
-        } else {
-            logCallback_("WS", QString("同步请求: last_alarm_id=%1").arg(lastAlarmId.left(8)));
+    } else {
+        if (logCallback_) {
+            logCallback_("WS", "收到 ping, 但客户端已断开, 无法回复");
         }
     }
 }
@@ -426,7 +294,7 @@ void WebSocketManager::handleViewStream(QWebSocket* client, const QString& strea
     response["type"] = "stream_url";
     response["stream_id"] = streamId;
     response["url"] = streamUrl;
-    response["message"] = "请在浏览器中打开此URL查看实时视频";
+    response["message"] = "请使用WebSocket客户端连接此地址查看实时视频";
 
     replyToClient(client, response);
 
@@ -445,36 +313,5 @@ void WebSocketManager::onClientDisconnected(QWebSocket* socket) {
     if (logCallback_) {
         QMutexLocker locker(&mutex_);
         logCallback_("WS", QString("客户端断开连接, 剩余: %1").arg(clients_.size()));
-    }
-}
-
-void WebSocketManager::retryAlarm(const QString& alarmId) {
-    QMutexLocker locker(&mutex_);
-
-    auto it = pendingAlarms_.find(alarmId);
-    if (it == pendingAlarms_.end()) return;
-
-    // 超过最大重试次数, 停止重试并清理
-    if (++it->retryCount >= MAX_RETRY_COUNT) {
-        if (it->retryTimer) {
-            it->retryTimer->stop();
-            delete it->retryTimer;
-        }
-        pendingAlarms_.erase(it);
-
-        if (logCallback_) {
-            logCallback_("告警", QString("告警 %1 重试超限, 已放弃").arg(alarmId.left(8)));
-        }
-        return;
-    }
-
-    // 重发给所有连接的客户端
-    for (auto* client : clients_) {
-        client->sendTextMessage(it->jsonMessage);
-    }
-
-    if (logCallback_) {
-        logCallback_("告警", QString("重发告警: %1 (%2/%3)")
-            .arg(alarmId.left(8)).arg(it->retryCount).arg(MAX_RETRY_COUNT));
     }
 }

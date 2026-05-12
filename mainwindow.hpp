@@ -30,7 +30,6 @@
 #include "gui_logger.hpp"
 #include "inference_engine.hpp"
 #include "inference_worker.hpp"
-#include "http_file_server.hpp"
 #include "inference_manager.hpp"
 #include "config.hpp"
 #include "runtime_config.hpp"
@@ -39,6 +38,8 @@
 #include "camera_manager.hpp"
 
 class VideoRecorder;
+class VideoWebSocketServer;
+class AlertWebSocketServer;
 
 namespace Ui { class MainWindow; }
 
@@ -118,9 +119,7 @@ private:
     std::unique_ptr<ModelManager> modelManager_;
     std::unique_ptr<InferenceManager> inferenceManager_;
 
-    std::unique_ptr<HttpFileServer> httpFileServer_;
-
-    // 输出通道 (MJPEG, WebSocket 告警, 录像 等)
+    // 输出通道 (视频流WebSocket, 告警WebSocket, 控制WebSocket, 录像)
     std::vector<std::unique_ptr<IOutputSink>> sinks_;
     VideoRecorder* videoRecorder_ = nullptr;  // 别名, UI 控制用
 

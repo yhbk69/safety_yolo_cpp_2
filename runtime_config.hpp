@@ -82,8 +82,8 @@ public:
     int websocketPort() const         { std::lock_guard<std::mutex> lk(mu_); return websocketPort_; }
     void setWebsocketPort(int v)      { std::lock_guard<std::mutex> lk(mu_); websocketPort_ = v; }
 
-    int httpPort() const              { std::lock_guard<std::mutex> lk(mu_); return httpPort_; }
-    void setHttpPort(int v)           { std::lock_guard<std::mutex> lk(mu_); httpPort_ = v; }
+    int alertWsPort() const           { std::lock_guard<std::mutex> lk(mu_); return alertWsPort_; }
+    void setAlertWsPort(int v)        { std::lock_guard<std::mutex> lk(mu_); alertWsPort_ = v; }
 
     int streamPort() const            { std::lock_guard<std::mutex> lk(mu_); return streamPort_; }
     void setStreamPort(int v)         { std::lock_guard<std::mutex> lk(mu_); streamPort_ = v; }
@@ -184,7 +184,7 @@ public:
         root["conf_threshold"]     = confThreshold_;
         root["iou_threshold"]      = iouThreshold_;
         root["websocket_port"]     = websocketPort_;
-        root["http_port"]          = httpPort_;
+        root["alert_ws_port"]      = alertWsPort_;
         root["stream_port"]        = streamPort_;
         root["ack_timeout_ms"]     = ackTimeoutMs_;
         root["ring_buffer_frames"] = ringBufferFrames_;
@@ -212,7 +212,8 @@ private:
         if (root.contains("conf_threshold"))     confThreshold_     = (float)root["conf_threshold"].toDouble(confThreshold_);
         if (root.contains("iou_threshold"))      iouThreshold_      = (float)root["iou_threshold"].toDouble(iouThreshold_);
         if (root.contains("websocket_port"))     websocketPort_     = root["websocket_port"].toInt(websocketPort_);
-        if (root.contains("http_port"))          httpPort_          = root["http_port"].toInt(httpPort_);
+        if (root.contains("alert_ws_port"))      alertWsPort_       = root["alert_ws_port"].toInt(alertWsPort_);
+        else if (root.contains("http_port"))     alertWsPort_       = root["http_port"].toInt(alertWsPort_); // 兼容旧配置
         if (root.contains("stream_port"))        streamPort_        = root["stream_port"].toInt(streamPort_);
         if (root.contains("ack_timeout_ms"))     ackTimeoutMs_      = root["ack_timeout_ms"].toInt(ackTimeoutMs_);
         if (root.contains("ring_buffer_frames")) ringBufferFrames_  = root["ring_buffer_frames"].toInt(ringBufferFrames_);
@@ -245,7 +246,7 @@ private:
     float confThreshold_     = 0.25f;
     float iouThreshold_      = 0.45f;
     int   websocketPort_     = 9090;
-    int   httpPort_          = 9091;
+    int   alertWsPort_       = 9091;
     int   streamPort_        = 9092;
     int   ackTimeoutMs_      = 5000;
     int   ringBufferFrames_  = 90;
