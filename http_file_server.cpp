@@ -107,6 +107,13 @@ void HttpFileServer::onNewConnection() {
     auto* socket = server_->nextPendingConnection();
     if (!socket) return;
 
+    QString peerIp = socket->peerAddress().toString();
+    quint16 peerPort = socket->peerPort();
+
+    if (logCallback_) {
+        logCallback_("HTTP", QString("新连接 [%1:%2]").arg(peerIp).arg(peerPort));
+    }
+
     // 使用 QPointer 确保对象销毁时自动清理
     QPointer<QTcpSocket> socketPtr(socket);
 
@@ -117,6 +124,9 @@ void HttpFileServer::onNewConnection() {
 
         // 等待完整的HTTP请求(检查是否以\r\n\r\n结尾)
         QByteArray requestData = socket->readAll();
+        if (logCallback_) {
+            logCallback_("HTTP", QString("收到请求: %1").arg(QString::fromUtf8(requestData.left(200))));
+        }
         if (!requestData.contains("\r\n\r\n")) {
             // 请求头不完整, 等待更多数据
             if (socket->state() == QAbstractSocket::ConnectedState) return;
@@ -147,6 +157,9 @@ void HttpFileServer::onNewConnection() {
 
         // 读取文件
         QString filePath = rootDir_ + "/" + fileName;
+        if (logCallback_) {
+            logCallback_("HTTP", QString("请求文件: %1 (rootDir=%2)").arg(fileName).arg(rootDir_));
+        }
         QFile file(filePath);
         if (!file.open(QIODevice::ReadOnly)) {
             socket->write("HTTP/1.1 404 Not Found\r\n\r\n");
@@ -160,6 +173,10 @@ void HttpFileServer::onNewConnection() {
         // 根据扩展名设置 Content-Type
         QString ext = QFileInfo(fileName).suffix().toLower();
         QString mime = getMimeType(ext);
+
+        if (logCallback_) {
+            logCallback_("HTTP", QString("发送文件: %1 (%2 bytes, MIME=%3)").arg(fileName).arg(data.size()).arg(mime));
+        }
 
         // 构造 HTTP 响应
         QByteArray header = QString(
