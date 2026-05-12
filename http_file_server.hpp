@@ -21,6 +21,7 @@
 #include <QTcpSocket>
 #include <QMutex>
 #include <QList>
+#include <QMap>
 #include <functional>
 
 class HttpFileServer {
@@ -75,6 +76,9 @@ private:
     quint16 port_ = 0;
     mutable QMutex mutex_;
     std::function<void(const QString&, const QString&)> logCallback_;
+
+    // 每个连接的HTTP请求头缓冲区 (处理TCP分片)
+    QMap<QTcpSocket*, QByteArray> requestBuffers_;
 
     // MIME 类型映射
     static QString getMimeType(const QString& fileName);

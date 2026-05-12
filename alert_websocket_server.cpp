@@ -61,7 +61,7 @@ void AlertWebSocketServer::stop() {
     for (auto* client : toClose) {
         if (client) {
             client->close();
-            client->deleteLater();
+            delete client;
         }
     }
 }
@@ -137,10 +137,11 @@ void AlertWebSocketServer::pushAlert(const AlertData& data) {
 }
 
 void AlertWebSocketServer::sendAlarmToClients(const PendingAlarm& alarm) {
+    // NOTE: caller must hold mutex_ lock
     if (logCallback_) {
         logCallback_(QStringLiteral("告警"), QString("开始发送告警[%1]: 客户端数=%2, 图片=%3, 视频=%4").arg(alarm.alarmId).arg(clients_.size()).arg(alarm.imagePath).arg(alarm.videoPath));
     }
-    // 1. 发送告警元数据 (JSON 文本帧)
+    // 仅发送告警元数据 JSON, 客户端通过 HTTP 下载文件
     int sentCount = 0;
     for (auto* client : clients_) {
         if (client && client->state() == QAbstractSocket::ConnectedState) {
@@ -150,60 +151,6 @@ void AlertWebSocketServer::sendAlarmToClients(const PendingAlarm& alarm) {
     }
     if (logCallback_ && sentCount > 0) {
         logCallback_(QStringLiteral("告警"), QString("已发送告警元数据[%1]到 %2 个客户端").arg(alarm.alarmId).arg(sentCount));
-    }
-
-    // 2. 发送告警截图 (二进制 JPEG)
-    if (!alarm.imagePath.isEmpty()) {
-        QFile imgFile(alarm.imagePath);
-        if (imgFile.open(QIODevice::ReadOnly)) {
-            QByteArray imgData = imgFile.readAll();
-            imgFile.close();
-            if (!imgData.isEmpty()) {
-                int imgSent = 0;
-                for (auto* client : clients_) {
-                    if (client && client->state() == QAbstractSocket::ConnectedState) {
-                        client->sendBinaryMessage(imgData);
-                        imgSent++;
-                    }
-                }
-                if (logCallback_ && imgSent > 0) {
-                    logCallback_(QStringLiteral("告警"), QString("已推送截图[%1](%2 bytes)到 %3 个客户端").arg(alarm.alarmId).arg(imgData.size()).arg(imgSent));
-                } else if (logCallback_ && imgSent == 0) {
-                    logCallback_(QStringLiteral("告警"), QString("截图推送失败[%1]: 无可用客户端").arg(alarm.alarmId));
-                }
-            } else if (logCallback_) {
-                logCallback_(QStringLiteral("告警"), QString("截图文件为空[%1]").arg(alarm.alarmId));
-            }
-        } else if (logCallback_) {
-            logCallback_(QStringLiteral("告警"), QString("无法打开截图文件: %1").arg(alarm.imagePath));
-        }
-    }
-
-    // 3. 发送告警视频 (二进制 MP4)
-    if (!alarm.videoPath.isEmpty()) {
-        QFile vidFile(alarm.videoPath);
-        if (vidFile.open(QIODevice::ReadOnly)) {
-            QByteArray vidData = vidFile.readAll();
-            vidFile.close();
-            if (!vidData.isEmpty()) {
-                int vidSent = 0;
-                for (auto* client : clients_) {
-                    if (client && client->state() == QAbstractSocket::ConnectedState) {
-                        client->sendBinaryMessage(vidData);
-                        vidSent++;
-                    }
-                }
-                if (logCallback_ && vidSent > 0) {
-                    logCallback_(QStringLiteral("告警"), QString("已推送视频[%1](%2 bytes)到 %3 个客户端").arg(alarm.alarmId).arg(vidData.size()).arg(vidSent));
-                } else if (logCallback_ && vidSent == 0) {
-                    logCallback_(QStringLiteral("告警"), QString("视频推送失败[%1]: 无可用客户端").arg(alarm.alarmId));
-                }
-            } else if (logCallback_) {
-                logCallback_(QStringLiteral("告警"), QString("视频文件为空[%1]").arg(alarm.alarmId));
-            }
-        } else if (logCallback_) {
-            logCallback_(QStringLiteral("告警"), QString("无法打开视频文件: %1").arg(alarm.videoPath));
-        }
     }
 }
 
@@ -298,13 +245,15 @@ void AlertWebSocketServer::onClientDisconnected(QWebSocket* socket) {
     QString peerIp = socket->peerAddress().toString();
     quint16 peerPort = socket->peerPort();
 
+    int remainingCount = 0;
     {
         QMutexLocker locker(&mutex_);
         clients_.removeAll(socket);
+        remainingCount = clients_.size();
     }
 
     if (logCallback_) {
-        logCallback_(QStringLiteral("告警"), QString("客户端已断开 [%1:%2]").arg(peerIp).arg(peerPort));
+        logCallback_(QStringLiteral("告警"), QString("客户端已断开 [%1:%2], 剩余: %3").arg(peerIp).arg(peerPort).arg(remainingCount));
     }
 
     socket->deleteLater();

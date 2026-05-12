@@ -96,7 +96,9 @@ void WebSocketManager::setViewStreamCallback(std::function<QString(const QString
 void WebSocketManager::broadcast(const QString& message) {
     QMutexLocker locker(&mutex_);
     for (auto* client : clients_) {
-        client->sendTextMessage(message);
+        if (client && client->state() == QAbstractSocket::ConnectedState) {
+            client->sendTextMessage(message);
+        }
     }
 }
 

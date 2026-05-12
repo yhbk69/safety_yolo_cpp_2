@@ -122,14 +122,16 @@ void HttpFileServer::onNewConnection() {
         auto* socket = socketPtr.data();
         if (!socket) return;
 
-        // 等待完整的HTTP请求(检查是否以\r\n\r\n结尾)
-        QByteArray requestData = socket->readAll();
+        // 累积请求数据到缓冲区 (处理TCP分片)
+        requestBuffers_[socket].append(socket->readAll());
+        if (!requestBuffers_[socket].contains("\r\n\r\n")) {
+            return; // 请求头不完整, 等待更多数据
+        }
+
+        // 取走完整请求数据并从缓冲区移除
+        QByteArray requestData = requestBuffers_.take(socket);
         if (logCallback_) {
             logCallback_("HTTP", QString("收到请求: %1").arg(QString::fromUtf8(requestData.left(200))));
-        }
-        if (!requestData.contains("\r\n\r\n")) {
-            // 请求头不完整, 等待更多数据
-            if (socket->state() == QAbstractSocket::ConnectedState) return;
         }
 
         QString request = QString::fromUtf8(requestData);
@@ -141,22 +143,27 @@ void HttpFileServer::onNewConnection() {
 
         // 解析 GET /filename.ext HTTP/1.1
         QStringList parts = lines[0].split(' ');
-        if (parts.size() < 2 || parts[0] != "GET") {
+        if (parts.size() < 2) {
             socket->write("HTTP/1.1 400 Bad Request\r\n\r\n");
             socket->close();
             return;
         }
-
-        // 获取请求的文件名, 防止路径穿越
-        QString fileName = QFileInfo(parts[1]).fileName();
-        if (fileName.isEmpty() || fileName.contains("..")) {
-            socket->write("HTTP/1.1 404 Not Found\r\n\r\n");
+        if (parts[0] != "GET") {
+            socket->write("HTTP/1.1 405 Method Not Allowed\r\n\r\n");
             socket->close();
             return;
         }
 
-        // 读取文件
-        QString filePath = rootDir_ + "/" + fileName;
+        // 防止路径穿越: 解析请求路径并验证在 rootDir_ 内
+        QString requestPath = parts[1];
+        QString filePath = QDir::cleanPath(rootDir_ + "/" + requestPath);
+        QString cleanRoot = QDir::cleanPath(rootDir_);
+        if (!filePath.startsWith(cleanRoot + "/") && filePath != cleanRoot) {
+            socket->write("HTTP/1.1 404 Not Found\r\n\r\n");
+            socket->close();
+            return;
+        }
+        QString fileName = QFileInfo(filePath).fileName();
         if (logCallback_) {
             logCallback_("HTTP", QString("请求文件: %1 (rootDir=%2)").arg(fileName).arg(rootDir_));
         }
@@ -191,8 +198,9 @@ void HttpFileServer::onNewConnection() {
     });
 
     // 客户端断开时自动清理
-    QObject::connect(socket, &QTcpSocket::disconnected, socketPtr, [socketPtr]() {
+    QObject::connect(socket, &QTcpSocket::disconnected, socketPtr, [this, socketPtr]() {
         if (socketPtr) {
+            requestBuffers_.remove(socketPtr.data());
             socketPtr->deleteLater();
         }
     });
