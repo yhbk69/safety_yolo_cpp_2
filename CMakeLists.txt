@@ -63,6 +63,7 @@ set(SOURCES
     websocket_manager.cpp
     video_websocket_server.cpp
     alert_websocket_server.cpp
+    http_file_server.cpp
     inference_manager.cpp
     mainwindow.ui        # Qt UI 布局文件(由 Qt Creator 可视化编辑)
 )
@@ -90,6 +91,7 @@ set(HEADERS
     websocket_manager.hpp
     video_websocket_server.hpp
     alert_websocket_server.hpp
+    http_file_server.hpp
     rknn_inference_engine.hpp
 )
 

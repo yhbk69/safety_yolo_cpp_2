@@ -61,7 +61,7 @@ void AlertWebSocketServer::stop() {
     for (auto* client : toClose) {
         if (client) {
             client->close();
-            delete client;
+            client->deleteLater();
         }
     }
 }

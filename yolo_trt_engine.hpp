@@ -19,7 +19,7 @@
 #include <vector>
 #include <string>
 #include <memory>
-#include <mutex>
+#include <QMutex>
 #include <stdexcept>
 #include <cuda_runtime.h>
 #include "NvInfer.h"
@@ -42,6 +42,8 @@ class YoloTrtEngine : public IEngine {
 public:
     YoloTrtEngine() = default;
     ~YoloTrtEngine() override { cleanup(); }
+    // NOTE: cleanup() does NOT lock inferMutex_ — engine must be destroyed
+    // after all worker threads have fully exited (see ~MainWindow thread wait).
 
     YoloTrtEngine(const YoloTrtEngine&) = delete;
     YoloTrtEngine& operator=(const YoloTrtEngine&) = delete;
@@ -76,7 +78,7 @@ public:
                int imgWidth, int imgHeight,
                float confThreshold, float iouThreshold) override
     {
-        std::lock_guard<std::mutex> lock(inferMutex_);
+        QMutexLocker lock(&inferMutex_);
         CUDA_CHECK(cudaMemcpyAsync(gpuInputBuffer_, input.data(),
                     input.size() * sizeof(float), cudaMemcpyHostToDevice, stream_));
         CUDA_CHECK(cudaStreamSynchronize(stream_));
@@ -96,7 +98,7 @@ public:
                     const std::vector<std::pair<int,int>>& imgSizes,
                     float confThreshold, float iouThreshold) override
     {
-        std::lock_guard<std::mutex> lock(inferMutex_);
+        QMutexLocker lock(&inferMutex_);
         const int batchSize = static_cast<int>(inputs.size());
         if (batchSize == 0) return;
         if (batchSize > Config::BATCH_SIZE) {
@@ -129,7 +131,7 @@ public:
     }
 
 private:
-    std::mutex inferMutex_;
+    QMutex inferMutex_;
     bool loaded_ = false;
     cudaStream_t stream_ = nullptr;
     std::unique_ptr<nvinfer1::IRuntime> runtime_;

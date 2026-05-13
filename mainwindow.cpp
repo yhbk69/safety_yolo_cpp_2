@@ -264,14 +264,14 @@ MainWindow::~MainWindow() {
         isProcessing_ = false;
     }
 
-    // 备份: 确保所有工作线程已退出, 避免 ~QThread 触发 assert
+    // 备份: 等待所有工作线程自然退出, 避免 ~QThread 触发 assert
+    // 不使用 terminate(): 强制终止线程会使该线程持有的 std::mutex 处于未定义状态,
+    // 后续 mutex 析构时抛 std::system_error。阻塞在 readFrame() 的线程会由
+    // 进程退出时的 OS 清理。
     const auto threads = findChildren<QThread*>();
     for (auto* t : threads) {
         t->quit();
-        if (!t->wait(2000)) {
-            t->terminate();
-            t->wait(1000);
-        }
+        t->wait(5000);
     }
 
     // 清理 HTTP 文件服务器
@@ -376,7 +376,6 @@ void MainWindow::onLoadModel() {
         enableControls(true);
         updateModelButtons(false);
         autoStartCameras();
-        // 模型加载完成: 如果有摄像头在运行则按钮已禁用, 否则启用
         if (startDetectBtn_) startDetectBtn_->setEnabled(cameraManager_->isEmpty());
     } else {
         ui->modelStatusLabel->setText("✗ 加载失败");
@@ -398,7 +397,8 @@ void MainWindow::onReloadModel() {
         QMessageBox::warning(this, "警告", "当前没有已加载的模型");
         return;
     }
-    if (!fs::exists(modelPath.toStdString())) {
+    // 使用宽字符串构造 path，避免窄->宽按系统代码页转换失败（ERROR_NO_UNICODE_TRANSLATION）
+    if (!fs::exists(fs::path(modelPath.toStdWString()))) {
         QMessageBox::warning(this, "警告", "模型文件不存在:\n" + modelPath);
         return;
     }
