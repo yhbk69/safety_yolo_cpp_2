@@ -29,6 +29,9 @@ public:
     CameraVideoSource(int cameraId, const QString& source = {});
     ~CameraVideoSource() override;
 
+    /// 验证摄像头/RTSP源在当前是否可达(尝试打开后立即关闭)
+    static bool validate(const QString& source, int cameraId = 0);
+
     bool readFrame(cv::Mat& frame) override;
     QString name() const override { return name_; }
     int frameDelayMs() const override { return 0; }  // 实时源无需额外延迟

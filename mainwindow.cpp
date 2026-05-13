@@ -550,6 +550,16 @@ void MainWindow::onAddCamera() {
     QString alias = aliasEdit->text().trimmed();
     if (alias.isEmpty()) alias = source;
 
+    // 添加前验证源是否可达
+    if (!CameraVideoSource::validate(source)) {
+        GuiLogger::log(ui->logTextEdit, "警告",
+            QString("摄像头源 %1 当前不可达, 但仍会添加, 可在启动后重试").arg(source));
+        auto reply = QMessageBox::warning(this, QString::fromUtf8("摄像头不可达"),
+            QString("摄像头源 %1 当前无法连接, 是否继续添加?").arg(source),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (reply == QMessageBox::No) return;
+    }
+
     int camId = cameraManager_->allocateId();
     QString camName = QString("camera_%1").arg(camId);
 
@@ -691,16 +701,19 @@ void MainWindow::autoStartCameras() {
         confThreshold_ = camConfThresholds_.begin()->second;
         nmsThreshold_  = camNmsThresholds_.begin()->second;
     }
-    ui->confSlider->setValue(static_cast<int>(confThreshold_ * 100));
-    ui->nmsSlider->setValue(static_cast<int>(nmsThreshold_ * 100));
-    ui->cameraBtn->setChecked(true);
-    ui->cameraBtn->setText(QString::fromUtf8("关闭摄像头"));
-    ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
-    ui->cameraStatusLabel->setText(QString("● %1路运行").arg(cameraManager_->count()));
-    ui->stopBtn->setEnabled(true);
-    if (startDetectBtn_) startDetectBtn_->setEnabled(false);
-    updateModelButtons(true);
-    GuiLogger::log(ui->logTextEdit, "系统", QString("自动启动完成, 当前 %1 路摄像头").arg(cameraManager_->count()));
+    if (cameraManager_->count() > 0) {
+        ui->confSlider->setValue(static_cast<int>(confThreshold_ * 100));
+        ui->nmsSlider->setValue(static_cast<int>(nmsThreshold_ * 100));
+        ui->cameraBtn->setChecked(true);
+        ui->cameraBtn->setText(QString::fromUtf8("关闭摄像头"));
+        ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
+        ui->cameraStatusLabel->setText(QString("● %1路运行").arg(cameraManager_->count()));
+        ui->stopBtn->setEnabled(true);
+        if (startDetectBtn_) startDetectBtn_->setEnabled(false);
+        updateModelButtons(true);
+    }
+    GuiLogger::log(ui->logTextEdit, "系统",
+        QString("自动启动完成, 当前 %1 路摄像头").arg(cameraManager_->count()));
     refreshCameraList();
 }
 
@@ -941,6 +954,8 @@ void MainWindow::onWorkerFinished(int cameraId) {
         GuiLogger::log(ui->logTextEdit, "系统", QString("摄像头 %1 处理完成").arg(cameraId));
     }
 
+    refreshCameraList();
+
     // 如果没有任何活跃worker, 重置UI
     if (cameraManager_->isEmpty()) {
         isProcessing_ = false;
@@ -950,6 +965,11 @@ void MainWindow::onWorkerFinished(int cameraId) {
         if (startDetectBtn_) startDetectBtn_->setEnabled(modelManager_->isLoaded());
         fpsLabel_->setText("FPS: --");
         statusMessageLabel_->setText("处理完成");
+        ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px;");
+        ui->cameraStatusLabel->setText(QString::fromUtf8("⏹ 未开启"));
+    } else {
+        ui->cameraStatusLabel->setStyleSheet("font-size: 20px; font-weight: bold; padding: 0 12px; color: green;");
+        ui->cameraStatusLabel->setText(QString("● %1路运行").arg(cameraManager_->count()));
     }
 }
 
@@ -958,6 +978,23 @@ void MainWindow::onWorkerError(int cameraId, const QString& message) {
     if (cameraId == 0) {
         ui->cameraBtn->setChecked(false);
     }
+
+    // 从已保存配置中移除失效摄像头，避免下次启动重复重试
+    QString src = cameraSources_.count(cameraId) ? cameraSources_[cameraId] : QString();
+    if (!src.isEmpty()) {
+        auto& cfg = RuntimeConfig::instance();
+        auto cams = cfg.cameras();
+        for (size_t i = 0; i < cams.size(); ++i) {
+            if (cams[i].source == src) {
+                cfg.removeCamera(static_cast<int>(i));
+                cfg.saveToFile(cfg.configFilePath());
+                GuiLogger::log(ui->logTextEdit, "系统",
+                    QString("已从保存列表中移除失效摄像头: %1").arg(src));
+                break;
+            }
+        }
+    }
+
     onWorkerFinished(cameraId);
 }
 

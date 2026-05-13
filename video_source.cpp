@@ -25,9 +25,25 @@ CameraVideoSource::CameraVideoSource(int cameraId, const QString& source) {
     }
     if (cap_.isOpened()) {
         cap_.set(cv::CAP_PROP_BUFFERSIZE, 1);
-        // 设置读取超时, 避免网络断开时 cap_.read() 永久阻塞
-        cap_.set(cv::CAP_PROP_OPEN_TIMEOUT_MSEC, 3000);
     }
+}
+
+bool CameraVideoSource::validate(const QString& source, int cameraId) {
+    cv::VideoCapture cap;
+    if (!source.isEmpty() && source.startsWith("rtsp://")) {
+        cap.open(source.toStdString());
+    } else {
+        bool ok = false;
+        int devId = source.isEmpty() ? cameraId : source.toInt(&ok);
+#ifdef _WIN32
+        cap.open(ok ? devId : cameraId, cv::CAP_DSHOW);
+#else
+        cap.open(ok ? devId : cameraId);
+#endif
+    }
+    bool valid = cap.isOpened();
+    if (valid) cap.release();
+    return valid;
 }
 
 CameraVideoSource::~CameraVideoSource() {
