@@ -1,5 +1,6 @@
 # Build output
 build/
+build_*/
 dist/
 x64/
 Release/
@@ -9,6 +10,13 @@ Debug/
 
 # Qt generated files
 GeneratedFiles/
+moc_*.cpp
+ui_*.h
+qrc_*.cpp
+
+# Backup files
+*.bak
+*.bak2
 
 # Model files (体积大且可从别处获取)
 *.engine

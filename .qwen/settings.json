@@ -15,7 +15,24 @@
       "Bash(select-string *)",
       "Bash(select-object *)",
       "Bash(msbuild *)",
-      "Bash(\"c:\\program files\\microsoft visual studio\\installer\\vswhere.exe\" *)"
+      "Bash(\"c:\\program files\\microsoft visual studio\\installer\\vswhere.exe\" *)",
+      "Bash(ls *)",
+      "Bash(g++ *)",
+      "Bash(nvcc *)",
+      "Bash(tail *)",
+      "Bash(dpkg *)",
+      "Bash(grep *)",
+      "Bash(ldconfig *)",
+      "Bash(do *)",
+      "Bash(done)",
+      "Bash(find *)",
+      "Bash(nm *)",
+      "Bash(apt-cache *)",
+      "Bash(rm *)",
+      "Bash(file *)",
+      "Bash(ldd *)",
+      "Bash(which *)",
+      "Bash(timeout *)"
     ]
   },
   "$version": 4

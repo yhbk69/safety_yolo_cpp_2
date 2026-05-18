@@ -1,13 +1,21 @@
 /**
  * @file model_manager.cpp
  * @brief 模型加载管理模块实现
+ *
+ * 自动选择推理后端: RKNN > TensorRT > NullEngine(占位)
  */
 
 #include "model_manager.hpp"
+#include "null_engine.hpp"
+
+#ifdef USE_TENSORRT
 #include "yolo_trt_engine.hpp"
-// TODO: RKNN 引擎头文件, 当前 rknn_inference_engine.hpp 存在编译问题
-// (rknn_context 前向声明+0初始化, Preprocessor 为命名空间而非类)
-// #include "rknn_inference_engine.hpp"
+#endif
+
+#ifdef USE_RKNN
+#include "rknn_inference_engine.hpp"
+#endif
+
 #include <QString>
 #include <QFileInfo>
 
@@ -19,21 +27,24 @@ ModelManager::ModelManager()
 bool ModelManager::load(const std::string& path) {
     try {
         std::unique_ptr<IEngine> eng;
-
         QString lower = QFileInfo(QString::fromStdString(path)).suffix().toLower();
+
+#ifdef USE_RKNN
+        if (lower == "rknn") {
+            eng = std::make_unique<RknnInferenceEngine>();
+        } else
+#endif
+#ifdef USE_TENSORRT
         if (lower == "engine") {
             eng = std::make_unique<YoloTrtEngine>();
-        } else if (lower == "rknn") {
-            // eng = std::make_unique<RknnInferenceEngine>();
-            if (callbacks_.onError) {
-                callbacks_.onError("RKNN 引擎暂未启用, 回退到 TensorRT");
-            }
-            eng = std::make_unique<YoloTrtEngine>();
-        } else {
+        } else
+#endif
+        {
+            // 无可用的推理引擎后端, 使用空引擎占位 (GUI 开发用)
             if (callbacks_.log) {
-                callbacks_.log("模型", QString("未知模型格式(%1), 默认使用 TensorRT 引擎").arg(lower));
+                callbacks_.log("模型", QString("无可用的推理后端, 使用空引擎占位 (GUI 模式)"));
             }
-            eng = std::make_unique<YoloTrtEngine>();
+            eng = std::make_unique<NullEngine>();
         }
 
         eng->load(path);

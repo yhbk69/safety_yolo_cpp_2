@@ -1,110 +1,169 @@
 /**
  * @file rknn_inference_engine.cpp
  * @brief RKNN (Rockchip NPU) 推理引擎实现
- * @note 需要 RKNN SDK 8.30+ (librknnapp.so)
+ * @note 链接 librknnrt.so, 使用 rknn_api.h 中的 C API
  */
 #include "rknn_inference_engine.hpp"
 #include "config.hpp"
 #include "types.hpp"
 #include "postprocessor.hpp"
+#include "preprocessor.hpp"
+
+#include <rknn_api.h>
 #include <iostream>
-#include <dlfcn.h>
 #include <cstring>
+#include <fstream>
+#include <vector>
 
-// RKNN API 函数指针类型定义
-typedef int (*rknn_init_t)(rknn_context*, void*, size_t, rknn_init_extended_t*);
-typedef int (*rknn_destroy_t)(rknn_context);
-typedef int (*rknn_query_t)(rknn_context, rknn_query_cmd, void*, int);
-typedef int (*rknn_inputs_set_t)(rknn_context, uint32_t, rknn_input*);
-typedef int (*rknn_run_t)(rknn_context, rknn_run_extended_t*);
-typedef int (*rknn_outputs_get_t)(rknn_context, uint32_t, rknn_tensor**);
-
-// RKNN 上下文句柄 (前向声明)
-struct rknn_context { int dummy = 0; };
-
-class RknnInferenceEngine::Impl {
-public:
-    void* libHandle_ = nullptr;
-    rknn_init_t rknn_init = nullptr;
-    rknn_destroy_t rknn_destroy = nullptr;
-    rknn_query_t rknn_query = nullptr;
-    rknn_inputs_set_t rknn_inputs_set = nullptr;
-    rknn_run_t rknn_run = nullptr;
-    rknn_outputs_get_t rknn_outputs_get = nullptr;
-
-    bool loadLibrary() {
-        const char* libPaths[] = {
-            "/usr/lib/librknnapi.so",
-            "/usr/lib64/librknnapi.so",
-            "/opt/rknn/lib/librknnapi.so",
-            nullptr
-        };
-        for (int i = 0; libPaths[i]; i++) {
-            libHandle_ = dlopen(libPaths[i], RTLD_LAZY);
-            if (libHandle_) break;
-        }
-        if (!libHandle_) {
-            std::cerr << "[RKNN] librknnapi.so not found" << std::endl;
-            return false;
-        }
-        rknn_init = (rknn_init_t)dlsym(libHandle_, "rknn_init");
-        rknn_destroy = (rknn_destroy_t)dlsym(libHandle_, "rknn_destroy");
-        rknn_query = (rknn_query_t)dlsym(libHandle_, "rknn_query");
-        rknn_inputs_set = (rknn_inputs_set_t)dlsym(libHandle_, "rknn_inputs_set");
-        rknn_run = (rknn_run_t)dlsym(libHandle_, "rknn_run");
-        rknn_outputs_get = (rknn_outputs_get_t)dlsym(libHandle_, "rknn_outputs_get");
-        return (rknn_init && rknn_destroy && rknn_run);
-    }
+// ============================================================
+// PIMPL 实现
+// ============================================================
+struct RknnInferenceEngine::Impl {
+    rknn_context ctx = 0;
+    int inputWidth  = 640;
+    int inputHeight = 640;
+    int channel     = 3;
+    int inputSize   = 640 * 640 * 3;
 
     ~Impl() {
-        if (libHandle_) dlclose(libHandle_);
+        if (ctx) {
+            rknn_destroy(ctx);
+            ctx = 0;
+        }
     }
 };
 
+// ============================================================
+// 构造函数 / 析构函数
+// ============================================================
 RknnInferenceEngine::RknnInferenceEngine()
-    : preprocessor_(std::make_unique<Preprocessor>())
-    , postprocessor_(std::make_unique<Postprocessor>()) {
+    : impl_(std::make_unique<Impl>())
+{
 }
 
-RknnInferenceEngine::~RknnInferenceEngine() {
-    if (ctx_) {
-        // rknn_destroy(ctx_);  // 当 SDK 可用时
-    }
-}
+RknnInferenceEngine::~RknnInferenceEngine() = default;
 
+// ============================================================
+// load
+// ============================================================
 void RknnInferenceEngine::load(const std::string& modelPath) {
-    modelName_ = modelPath;
-    // TODO: RKNN SDK 实际加载
-    // impl_ = std::make_unique<Impl>();
-    // if (!impl_->loadLibrary()) throw std::runtime_error("[RKNN] SDK not found");
-    // ... 加载 .rknn 模型文件 ...
-    inputSize_ = 640;
-    std::cout << "[RknnInferenceEngine] Stub loaded: " << modelPath << std::endl;
+    // 读取 .rknn 模型文件
+    std::ifstream file(modelPath, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) {
+        throw std::runtime_error("[RKNN] Cannot open model: " + modelPath);
+    }
+    size_t size = file.tellg();
+    file.seekg(0, std::ios::beg);
+    std::vector<uint8_t> modelData(size);
+    file.read(reinterpret_cast<char*>(modelData.data()), size);
+    file.close();
+
+    // 初始化 RKNN 上下文
+    int ret = rknn_init(&impl_->ctx, modelData.data(), size, 0, nullptr);
+    if (ret != 0) {
+        throw std::runtime_error("[RKNN] rknn_init failed, ret=" + std::to_string(ret));
+    }
+
+    // 查询输入输出信息
+    rknn_input_output_num io_num;
+    ret = rknn_query(impl_->ctx, RKNN_QUERY_IN_OUT_NUM, &io_num, sizeof(io_num));
+    if (ret != 0) {
+        throw std::runtime_error("[RKNN] rknn_query IN_OUT_NUM failed, ret=" + std::to_string(ret));
+    }
+
+    // 查询输入张量属性 (获取 input size)
+    rknn_tensor_attr input_attrs[io_num.n_input];
+    input_attrs[0].index = 0;
+    ret = rknn_query(impl_->ctx, RKNN_QUERY_INPUT_ATTR, &input_attrs[0], sizeof(rknn_tensor_attr));
+    if (ret == 0) {
+        impl_->inputWidth  = input_attrs[0].dims[2];
+        impl_->inputHeight = input_attrs[0].dims[1];
+        impl_->channel     = input_attrs[0].dims[3];
+        impl_->inputSize   = impl_->inputWidth * impl_->inputHeight * impl_->channel;
+        inputSize_ = impl_->inputSize;
+    }
+
+    std::cout << "[RKNN] Model loaded: " << modelPath
+              << " (" << impl_->inputWidth << "x" << impl_->inputHeight << ")"
+              << std::endl;
 }
 
+bool RknnInferenceEngine::loaded() const {
+    return impl_ && impl_->ctx != 0;
+}
+
+// ============================================================
+// infer
+// ============================================================
 void RknnInferenceEngine::infer(const std::vector<float>& input,
                                  std::vector<Detection>& detections,
                                  int imgWidth, int imgHeight,
-                                 float confThreshold, float iouThreshold) {
-    if (!loaded()) return;
-    // TODO: RKNN 实际推理
-    // 1. 将 float tensor 转换为 RKNN 输入格式 (uint8 量化)
-    // 2. rknn_inputs_set(ctx_, 1, &input)
-    // 3. rknn_run(ctx_, nullptr)
-    // 4. rknn_outputs_get(ctx_, 1, &outputs)
-    // 5. detections = postprocessor_->process(outputs, imgWidth, imgHeight, ...)
-    std::cerr << "[RKNN] Inference stub - SDK not loaded" << std::endl;
+                                 float confThreshold, float iouThreshold)
+{
+    if (!loaded()) {
+        detections.clear();
+        return;
+    }
+
+    // ----- 输入 -----
+    rknn_input inputs[1];
+    memset(inputs, 0, sizeof(inputs));
+    inputs[0].index        = 0;
+    inputs[0].type         = RKNN_TENSOR_FLOAT32;
+    inputs[0].size         = impl_->inputSize * sizeof(float);
+    inputs[0].fmt          = RKNN_TENSOR_NCHW;
+    inputs[0].buf          = const_cast<float*>(input.data());
+    inputs[0].pass_through = 0;
+
+    int ret = rknn_inputs_set(impl_->ctx, 1, inputs);
+    if (ret != 0) {
+        std::cerr << "[RKNN] rknn_inputs_set failed, ret=" << ret << std::endl;
+        detections.clear();
+        return;
+    }
+
+    // ----- 推理 -----
+    ret = rknn_run(impl_->ctx, nullptr);
+    if (ret != 0) {
+        std::cerr << "[RKNN] rknn_run failed, ret=" << ret << std::endl;
+        detections.clear();
+        return;
+    }
+
+    // ----- 输出 -----
+    rknn_output outputs[1];
+    memset(outputs, 0, sizeof(outputs));
+    outputs[0].want_float = 1;
+    outputs[0].index      = 0;
+
+    ret = rknn_outputs_get(impl_->ctx, 1, outputs, nullptr);
+    if (ret != 0) {
+        std::cerr << "[RKNN] rknn_outputs_get failed, ret=" << ret << std::endl;
+        detections.clear();
+        return;
+    }
+
+    // 后处理 (输出格式为 [1, 84, 8400] 的 float 数据)
+    float* outputData = static_cast<float*>(outputs[0].buf);
+    detections = Postprocessor::decodeDetections(
+        outputData, imgWidth, imgHeight, confThreshold, iouThreshold);
+
+    rknn_outputs_release(impl_->ctx, 1, outputs);
 }
 
-void RknnInferenceEngine::batchInfer(const std::vector<std::vector<float>>& inputs,
-                                      std::vector<std::vector<Detection>>& detectionsList,
-                                      const std::vector<std::pair<int,int>>& imgSizes,
-                                      float confThreshold, float iouThreshold) {
-    if (!loaded()) return;
-    // 默认回退: 串行逐帧推理
+// ============================================================
+// batchInfer (串行回退)
+// ============================================================
+void RknnInferenceEngine::batchInfer(
+    const std::vector<std::vector<float>>& inputs,
+    std::vector<std::vector<Detection>>& detectionsList,
+    const std::vector<std::pair<int,int>>& imgSizes,
+    float confThreshold, float iouThreshold)
+{
     detectionsList.resize(inputs.size());
     for (size_t i = 0; i < inputs.size(); ++i) {
-        infer(inputs[i], detectionsList[i], imgSizes[i].first, imgSizes[i].second,
+        infer(inputs[i], detectionsList[i],
+              imgSizes[i].first, imgSizes[i].second,
               confThreshold, iouThreshold);
     }
 }
