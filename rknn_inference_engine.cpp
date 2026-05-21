@@ -72,9 +72,9 @@ void RknnInferenceEngine::load(const std::string& modelPath) {
     }
 
     // 查询输入张量属性 (获取 input size)
-    rknn_tensor_attr input_attrs[io_num.n_input];
+    std::vector<rknn_tensor_attr> input_attrs(io_num.n_input);
     input_attrs[0].index = 0;
-    ret = rknn_query(impl_->ctx, RKNN_QUERY_INPUT_ATTR, &input_attrs[0], sizeof(rknn_tensor_attr));
+    ret = rknn_query(impl_->ctx, RKNN_QUERY_INPUT_ATTR, &(input_attrs[0]), sizeof(rknn_tensor_attr));
     if (ret == 0) {
         impl_->inputWidth  = input_attrs[0].dims[2];
         impl_->inputHeight = input_attrs[0].dims[1];
@@ -90,6 +90,17 @@ void RknnInferenceEngine::load(const std::string& modelPath) {
 
 bool RknnInferenceEngine::loaded() const {
     return impl_ && impl_->ctx != 0;
+}
+
+// ============================================================
+// reload (热切换, 先销毁旧 ctx 再加载新模型)
+// ============================================================
+void RknnInferenceEngine::reload(const std::string& newPath) {
+    if (impl_) {
+        impl_.reset();  // 析构函数调用 rknn_destroy, 安全释放旧 ctx
+    }
+    impl_ = std::make_unique<Impl>();
+    load(newPath);      // 加载新模型
 }
 
 // ============================================================
@@ -143,10 +154,33 @@ void RknnInferenceEngine::infer(const std::vector<float>& input,
         return;
     }
 
-    // 后处理 (输出格式为 [1, 84, 8400] 的 float 数据)
+    // 查询输出张量维度 (动态获取 numAnchors 和 numChannels)
+    rknn_tensor_attr output_attr;
+    memset(&output_attr, 0, sizeof(output_attr));
+    output_attr.index = 0;
+    ret = rknn_query(impl_->ctx, RKNN_QUERY_OUTPUT_ATTR, &output_attr, sizeof(output_attr));
+    if (ret != 0) {
+        std::cerr << "[RKNN] rknn_query OUTPUT_ATTR failed, ret=" << ret << std::endl;
+        rknn_outputs_release(impl_->ctx, 1, outputs);
+        detections.clear();
+        return;
+    }
+
+    // 输出格式: [1, numChannels, numAnchors] (NCHW)
+    int numChannels = output_attr.dims[1];  // 默认 84 (4+11类别)
+    int numAnchors  = output_attr.dims[2];  // 默认 8400 (640x640输入)
+
+    // 验证输出类型 (量化模型可能输出 INT8, 需要不同后处理)
+    if (output_attr.type != RKNN_TENSOR_FLOAT32) {
+        std::cerr << "[RKNN] WARNING: Model output is not FLOAT32, got type=" << output_attr.type
+                  << ". Quantized models may require different postprocessing." << std::endl;
+    }
+
+    // 后处理 (动态锚点数)
     float* outputData = static_cast<float*>(outputs[0].buf);
     detections = Postprocessor::decodeDetections(
-        outputData, imgWidth, imgHeight, confThreshold, iouThreshold);
+        outputData, numAnchors, numChannels,
+        imgWidth, imgHeight, confThreshold, iouThreshold);
 
     rknn_outputs_release(impl_->ctx, 1, outputs);
 }

@@ -15,6 +15,7 @@ public:
 
     // ---- IEngine 接口实现 ----
     void load(const std::string& modelPath) override;
+    void reload(const std::string& newPath) override;
     EngineType type() const override { return EngineType::RKNN; }
     bool loaded() const override;
     int inputSize() const override { return inputSize_; }

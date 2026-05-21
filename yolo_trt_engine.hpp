@@ -89,7 +89,11 @@ public:
         CUDA_CHECK(cudaMemcpy(output.data(), gpuOutputBuffer_,
                     output.size() * sizeof(float), cudaMemcpyDeviceToHost));
 
-        detections = Postprocessor::decodeDetections(output.data(), imgWidth, imgHeight,
+        // 输出格式 [channels, 8400], 从 getOutputSize() 推断
+        int numAnchors = 8400;
+        int numChannels = static_cast<int>(getOutputSize()) / numAnchors;
+        detections = Postprocessor::decodeDetections(output.data(), numAnchors, numChannels,
+                                                       imgWidth, imgHeight,
                                                        confThreshold, iouThreshold);
     }
 
@@ -122,11 +126,15 @@ public:
         CUDA_CHECK(cudaMemcpy(output.data(), gpuOutputBuffer_,
                     output.size() * sizeof(float), cudaMemcpyDeviceToHost));
 
+        int numAnchors = 8400;
+        int numChannels = static_cast<int>(getOutputSize()) / numAnchors;
+
         detectionsList.resize(batchSize);
         for (int i = 0; i < batchSize; ++i) {
             float* frameOut = output.data() + i * getOutputSize();
             detectionsList[i] = Postprocessor::decodeDetections(
-                frameOut, imgSizes[i].first, imgSizes[i].second, confThreshold, iouThreshold);
+                frameOut, numAnchors, numChannels,
+                imgSizes[i].first, imgSizes[i].second, confThreshold, iouThreshold);
         }
     }
 

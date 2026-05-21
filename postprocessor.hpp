@@ -26,11 +26,15 @@
 namespace Postprocessor {
 
     // 从模型原始输出中提取有效检测结果
-    // YOLO11 TensorRT Engine输出格式: [channels, 8400]列优先(column-major)
+    // YOLO11 输出格式: [channels, numAnchors] 列优先(column-major)
     // 通道0=所有cx, 通道1=所有cy, 通道2=所有w, 通道3=所有h, 通道4起=类别分数
+    // outputData:    模型输出张量数据 (float*)
+    // numAnchors:    锚点数量 (从模型输出张量动态查询, YOLO11 640x640=8400)
+    // numChannels:   通道数 (默认 4+numClasses=15, 即 8400 锚点 x 15 通道)
     // confThreshold: 置信度阈值, 低于该值的检测被过滤
     // iouThreshold:  NMS的IOU阈值, 用于去除重叠框
-    static std::vector<Detection> decodeDetections(const float* output, int imgWidth, int imgHeight,
+    static std::vector<Detection> decodeDetections(const float* outputData, int numAnchors, int numChannels,
+                                                    int imgWidth, int imgHeight,
                                                     float confThreshold = Config::CONF_THRESHOLD,
                                                     float iouThreshold = Config::IOU_THRESHOLD) {
         std::vector<cv::Rect> boxes;
@@ -41,16 +45,15 @@ namespace Postprocessor {
         float scaleX = static_cast<float>(imgWidth)  / Config::INPUT_WIDTH;
         float scaleY = static_cast<float>(imgHeight) / Config::INPUT_HEIGHT;
 
-        constexpr int numAnchors = 8400;
-        constexpr int numClasses = Config::NUM_CLASSES;
+        int numClasses = numChannels - 4;  // 通道数 = 4(bbox) + numClasses
 
-        // 遍历所有8400个锚点, 找出置信度高于阈值的目标
+        // 遍历所有锚点, 找出置信度高于阈值的目标
         for (int i = 0; i < numAnchors; ++i) {
             // 找出最高分类得分及其类别索引
             int classId = 0;
             float maxConf = -1.0f;
             for (int j = 0; j < numClasses; ++j) {
-                float score = output[(4 + j) * numAnchors + i];
+                float score = outputData[(4 + j) * numAnchors + i];
                 if (score > maxConf) {
                     maxConf = score;
                     classId = j;
@@ -61,10 +64,10 @@ namespace Postprocessor {
             if (maxConf < confThreshold) continue;
 
             // 读取边界框坐标(按列优先)
-            float cx = output[0 * numAnchors + i];
-            float cy = output[1 * numAnchors + i];
-            float w  = output[2 * numAnchors + i];
-            float h  = output[3 * numAnchors + i];
+            float cx = outputData[0 * numAnchors + i];
+            float cy = outputData[1 * numAnchors + i];
+            float w  = outputData[2 * numAnchors + i];
+            float h  = outputData[3 * numAnchors + i];
 
             // 将坐标缩放回原始图像尺寸
             float x = (cx - w / 2.0f) * scaleX;

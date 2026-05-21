@@ -81,21 +81,39 @@ if(USE_TENSORRT)
 endif()
 
 # ---- RKNN (Rockchip NPU 推理引擎, 可选) ----
-find_path(RKNN_INCLUDE_DIR rknn_api.h
-    PATHS
-        /usr/include
-        /usr/local/include
-        /opt/rknn/include
-        /home/ztl/dltt/code/rknn/rknn_model_zoo-v2.3.0/3rdparty/rknpu2/include
+# 优先使用环境变量 RKNN_ROOT, 否则尝试常见路径
+if(NOT DEFINED RKNN_ROOT)
+    set(RKNN_ROOT $ENV{RKNN_ROOT})
+endif()
+
+set(RKNN_SEARCH_PATHS
+    /usr/include
+    /usr/local/include
+    /opt/rknn/include
 )
-find_library(RKNN_RT_LIB rknnrt
-    PATHS
-        /usr/lib/aarch64-linux-gnu
-        /usr/lib
-        /usr/local/lib
+if(RKNN_ROOT)
+    list(APPEND RKNN_SEARCH_PATHS "${RKNN_ROOT}/include")
+else()
+    # 自动扫描常见开发目录
+    file(GLOB RKNN_CANDIDATES "/home/*/rknn/rknn_model_zoo*/3rdparty/rknpu2/include")
+    list(APPEND RKNN_SEARCH_PATHS ${RKNN_CANDIDATES})
+endif()
+
+find_path(RKNN_INCLUDE_DIR rknn_api.h PATHS ${RKNN_SEARCH_PATHS})
+
+set(RKNN_LIB_SEARCH_PATHS
+    /usr/lib/aarch64-linux-gnu
+    /usr/lib
+    /usr/local/lib
 )
+if(RKNN_ROOT)
+    list(APPEND RKNN_LIB_SEARCH_PATHS "${RKNN_ROOT}/Linux/aarch64")
+endif()
+
+find_library(RKNN_RT_LIB rknnrt PATHS ${RKNN_LIB_SEARCH_PATHS})
+
 if(RKNN_INCLUDE_DIR AND RKNN_RT_LIB)
-    message(STATUS "RKNN found: ${RKNN_INCLUDE_DIR}")
+    message(STATUS "RKNN found: include=${RKNN_INCLUDE_DIR}, lib=${RKNN_RT_LIB}")
     add_definitions(-DUSE_RKNN)
 else()
     message(STATUS "RKNN not found — building with NullEngine stub")
