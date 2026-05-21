@@ -88,7 +88,8 @@ private:
     std::mutex bufferMutex_;
     std::deque<std::shared_ptr<cv::Mat>> frameBuffer_;
 
-    // 告警冷却
+    // 告警冷却(独立 mutex 保护, 避免与环形缓冲区锁竞争)
+    mutable std::mutex alertCooldownMutex_;
     std::unordered_map<int, std::chrono::steady_clock::time_point> lastAlertTime_;
 
     // 告警录制状态

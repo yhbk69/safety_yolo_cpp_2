@@ -94,8 +94,13 @@ void WebSocketManager::setViewStreamCallback(std::function<QString(const QString
 // ============================================================
 
 void WebSocketManager::broadcast(const QString& message) {
-    QMutexLocker locker(&mutex_);
-    for (auto* client : clients_) {
+    // 先复制客户端列表, 避免在持锁期间执行网络 I/O
+    QList<QWebSocket*> snapshot;
+    {
+        QMutexLocker locker(&mutex_);
+        snapshot = clients_;
+    }
+    for (auto* client : snapshot) {
         if (client && client->state() == QAbstractSocket::ConnectedState) {
             client->sendTextMessage(message);
         }
@@ -107,15 +112,22 @@ void WebSocketManager::broadcast(const QString& message) {
 // ============================================================
 
 void WebSocketManager::pushAlarm(const QString& alarmJson) {
-    QMutexLocker locker(&mutex_);
-    if (clients_.isEmpty()) {
+    // 先复制客户端列表, 避免在持锁期间执行网络 I/O
+    QList<QWebSocket*> snapshot;
+    {
+        QMutexLocker locker(&mutex_);
+        snapshot = clients_;
+    }
+
+    if (snapshot.isEmpty()) {
         if (logCallback_) {
             logCallback_("WS", "告警推送: 无客户端连接, 丢弃");
         }
         return;
     }
+
     int sentCount = 0;
-    for (auto* client : clients_) {
+    for (auto* client : snapshot) {
         if (client && client->state() == QAbstractSocket::ConnectedState) {
             client->sendTextMessage(alarmJson);
             sentCount++;

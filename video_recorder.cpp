@@ -85,7 +85,7 @@ bool VideoRecorder::stopRecording(int cameraId) {
     auto* session = it->second.get();
     QDateTime endTime = QDateTime::currentDateTime();
 
-    // 释放 writer
+    // 释放 writer (确保所有数据刷盘)
     session->writer.release();
 
     // 重命名文件,添加结束时间
@@ -95,15 +95,31 @@ bool VideoRecorder::stopRecording(int cameraId) {
     QFileInfo fi(oldPath);
     QString newPath = fi.absolutePath() + "/" + fi.completeBaseName() + "-" + endTimeStr + ".mp4";
 
-    if (QFile::exists(oldPath)) {
-        QFile::rename(oldPath, newPath);
-        session->videoPath = newPath;
-    }
-
     session->isRecording = false;
 
-    if (callbacks_.log) {
-        callbacks_.log("录像", QString("摄像头%1 录制完成: %2").arg(cameraId).arg(newPath));
+    if (QFile::exists(oldPath)) {
+        bool renameOk = QFile::rename(oldPath, newPath);
+        if (!renameOk) {
+            // Windows 上文件可能仍被占用, 尝试 copy+remove 作为降级方案
+            if (QFile::copy(oldPath, newPath)) {
+                QFile::remove(oldPath);
+            } else {
+                // 两个操作都失败, 保留原始路径
+                newPath = oldPath;
+                if (callbacks_.log) {
+                    callbacks_.log("录像",
+                        QString("摄像头%1 重命名录像文件失败, 保留原文件: %2").arg(cameraId).arg(oldPath));
+                }
+            }
+        }
+        session->videoPath = newPath;
+        if (callbacks_.log) {
+            callbacks_.log("录像", QString("摄像头%1 录制完成: %2").arg(cameraId).arg(newPath));
+        }
+    } else {
+        if (callbacks_.log) {
+            callbacks_.log("录像", QString("摄像头%1 录像文件不存在(可能未写入任何帧): %2").arg(cameraId).arg(oldPath));
+        }
     }
 
     // 更新 UI 按钮

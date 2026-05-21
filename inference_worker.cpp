@@ -52,6 +52,12 @@ void InferenceWorker::process(std::unique_ptr<IVideoSource> source,
         frameCount++;
         auto t0 = std::chrono::steady_clock::now();
         auto result = processOneFrame(frame, confThresh, nmsThresh);
+
+        // 未满 batch 时跳过后续处理(避免 emit 空图像)
+        if (result.image.isNull()) {
+            continue;
+        }
+
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - t0).count();
         emit frameProcessed(cameraId_, result.image, result.detections, elapsed);
@@ -92,8 +98,8 @@ InferenceWorker::FrameResult InferenceWorker::processOneFrame(
 
         if (batchCounter_ >= Config::BATCH_SIZE) {
             std::vector<std::vector<Detection>> batchDetections;
-               engine_->batchInfer(batchTensors_, batchDetections, batchImgSizes_,
-                               confThresh, nmsThresh);
+            engine_->batchInfer(batchTensors_, batchDetections, batchImgSizes_,
+                                confThresh, nmsThresh);
             if (!batchDetections.empty()) {
                 detections = std::move(batchDetections.back());
             }
@@ -101,43 +107,8 @@ InferenceWorker::FrameResult InferenceWorker::processOneFrame(
             batchImgSizes_.clear();
             batchCounter_ = 0;
         } else {
-            // 未满batch返回空检测
-            auto displayImg = std::make_shared<cv::Mat>(frame.clone());
-            Postprocessor::drawDetections(*displayImg, detections);
-
-            // 环形缓冲区
-            {
-                std::lock_guard<std::mutex> lock(bufferMutex_);
-                frameBuffer_.push_back(displayImg);
-                if (frameBuffer_.size() > Config::RING_BUFFER_FRAMES) {
-                    frameBuffer_.pop_front();
-                }
-            }
-
-            // 仍需检查告警(即使没有检测结果)
-            checkAlert(detections, displayImg);
-
-            // 告警录制后续帧
-            if (alertRecording_ && alertRemainingFrames_ > 0) {
-                alertBuffer_.push_back(displayImg);
-                alertRemainingFrames_--;
-                if (alertRemainingFrames_ == 0) {
-                    saveAlertFiles(QUuid::createUuid().toString(QUuid::WithoutBraces),
-                                  pendingAlarmType_);
-                    alertRecording_ = false;
-                    alertBuffer_.clear();
-                    pendingAlarmType_.clear();
-                }
-            }
-
-            cv::cvtColor(*displayImg, *displayImg, cv::COLOR_BGR2RGB);
-            QImage qimg(displayImg->data, displayImg->cols, displayImg->rows,
-                        displayImg->step, QImage::Format_RGB888);
-
-            FrameResult result;
-            result.image = qimg.copy();
-            result.detections = std::move(detections);
-            return result;
+            // 未满batch, 等待下一帧凑齐
+            return FrameResult{};
         }
     } else {
         engine_->infer(tensor, detections, frame.cols, frame.rows, confThresh, nmsThresh);
@@ -187,16 +158,19 @@ void InferenceWorker::checkAlert(
         if (name.find("no_") != 0) continue;
 
         auto now = std::chrono::steady_clock::now();
-        auto it = lastAlertTime_.find(det.class_id);
-        if (it != lastAlertTime_.end()) {
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                now - it->second).count();
-            if (elapsed < Config::ALERT_COOLDOWN_MS) {
-                // 冷却中, 跳过
-                continue;
+        {
+            std::lock_guard<std::mutex> lock(alertCooldownMutex_);
+            auto it = lastAlertTime_.find(det.class_id);
+            if (it != lastAlertTime_.end()) {
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - it->second).count();
+                if (elapsed < Config::ALERT_COOLDOWN_MS) {
+                    // 冷却中, 跳过
+                    continue;
+                }
             }
+            lastAlertTime_[det.class_id] = now;
         }
-        lastAlertTime_[det.class_id] = now;
 
         // 触发告警, 开始录制
         alertRecording_ = true;
