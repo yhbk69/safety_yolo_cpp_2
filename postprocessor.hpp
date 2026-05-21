@@ -25,25 +25,69 @@
 
 namespace Postprocessor {
 
+    // Letterbox信息结构体 (用于坐标反变换)
+    struct LetterboxInfo {
+        int origW, origH;       // 原始图像尺寸
+        int padW, padH;         // letterbox 填充后图像在画布中的尺寸
+        int offsetX, offsetY;   // 填充偏移量 (画布左上角)
+
+        static LetterboxInfo compute(int origW, int origH) {
+            float scaleW = static_cast<float>(Config::INPUT_WIDTH)  / origW;
+            float scaleH = static_cast<float>(Config::INPUT_HEIGHT) / origH;
+            float scale = std::min(scaleW, scaleH);
+
+            int newW = static_cast<int>(origW * scale);
+            int newH = static_cast<int>(origH * scale);
+            int offX = (Config::INPUT_WIDTH  - newW) / 2;
+            int offY = (Config::INPUT_HEIGHT - newH) / 2;
+
+            return {origW, origH, newW, newH, offX, offY};
+        }
+
+        // 将模型输出坐标 (640x640 空间) 转换为原始图像坐标
+        cv::Rect toOriginal(float mx1, float my1, float mx2, float my2) const {
+            // 先减去 letterbox 偏移, 再缩放到原始尺寸
+            float scale = static_cast<float>(padW) / Config::INPUT_WIDTH;  // 等比缩放
+            float x1 = (mx1 - offsetX) / scale;
+            float y1 = (my1 - offsetY) / scale;
+            float x2 = (mx2 - offsetX) / scale;
+            float y2 = (my2 - offsetY) / scale;
+
+            int finalX = std::max(0, static_cast<int>(x1));
+            int finalY = std::max(0, static_cast<int>(y1));
+            int finalW = std::min(origW - finalX, static_cast<int>(x2 - x1));
+            int finalH = std::min(origH - finalY, static_cast<int>(y2 - y1));
+
+            if (finalW <= 0 || finalH <= 0) return cv::Rect(0, 0, 0, 0);
+            return cv::Rect(finalX, finalY, finalW, finalH);
+        }
+    };
+
+    // 边界框格式枚举
+    enum BoxFormat {
+        XYWH_CENTER,  // cx, cy, w, h (YOLOv8 传统格式)
+        XYXY_CORNER   // x1, y1, x2, y2 (YOLO11 anchor-free 格式)
+    };
+
     // 从模型原始输出中提取有效检测结果
-    // YOLO11 输出格式: [channels, numAnchors] 列优先(column-major)
-    // 通道0=所有cx, 通道1=所有cy, 通道2=所有w, 通道3=所有h, 通道4起=类别分数
+    // YOLO11 输出格式: [1, numChannels, numAnchors] (NCHW)
+    // 内存布局: 行优先 (row-major), 即 [channel0全部锚点, channel1全部锚点, ...]
+    // 通道0-3=边界框坐标, 通道4起=类别分数
     // outputData:    模型输出张量数据 (float*)
     // numAnchors:    锚点数量 (从模型输出张量动态查询, YOLO11 640x640=8400)
     // numChannels:   通道数 (默认 4+numClasses=15, 即 8400 锚点 x 15 通道)
+    // lbInfo:        letterbox 变换信息 (用于坐标反变换)
+    // boxFormat:     边界框格式 (XYWH_CENTER 或 XYXY_CORNER)
     // confThreshold: 置信度阈值, 低于该值的检测被过滤
     // iouThreshold:  NMS的IOU阈值, 用于去除重叠框
     static std::vector<Detection> decodeDetections(const float* outputData, int numAnchors, int numChannels,
-                                                    int imgWidth, int imgHeight,
+                                                    const LetterboxInfo& lbInfo,
+                                                    BoxFormat boxFormat = XYXY_CORNER,
                                                     float confThreshold = Config::CONF_THRESHOLD,
                                                     float iouThreshold = Config::IOU_THRESHOLD) {
         std::vector<cv::Rect> boxes;
         std::vector<float> confidences;
         std::vector<int> classIds;
-
-        // 计算缩放比例(用于将模型输出坐标映射回原图)
-        float scaleX = static_cast<float>(imgWidth)  / Config::INPUT_WIDTH;
-        float scaleY = static_cast<float>(imgHeight) / Config::INPUT_HEIGHT;
 
         int numClasses = numChannels - 4;  // 通道数 = 4(bbox) + numClasses
 
@@ -53,6 +97,7 @@ namespace Postprocessor {
             int classId = 0;
             float maxConf = -1.0f;
             for (int j = 0; j < numClasses; ++j) {
+                // 行优先布局: outputData[channel * numAnchors + anchor_index]
                 float score = outputData[(4 + j) * numAnchors + i];
                 if (score > maxConf) {
                     maxConf = score;
@@ -63,25 +108,29 @@ namespace Postprocessor {
             // 过滤低置信度检测
             if (maxConf < confThreshold) continue;
 
-            // 读取边界框坐标(按列优先)
-            float cx = outputData[0 * numAnchors + i];
-            float cy = outputData[1 * numAnchors + i];
-            float w  = outputData[2 * numAnchors + i];
-            float h  = outputData[3 * numAnchors + i];
+            // 读取边界框坐标 (在 640x640 模型空间中)
+            float b0 = outputData[0 * numAnchors + i];
+            float b1 = outputData[1 * numAnchors + i];
+            float b2 = outputData[2 * numAnchors + i];
+            float b3 = outputData[3 * numAnchors + i];
 
-            // 将坐标缩放回原始图像尺寸
-            float x = (cx - w / 2.0f) * scaleX;
-            float y = (cy - h / 2.0f) * scaleY;
-            float boxW = w * scaleX;
-            float boxH = h * scaleY;
+            cv::Rect box;
 
-            // 确保边界框不超出图像范围
-            int boxX = std::max(0, static_cast<int>(x));
-            int boxY = std::max(0, static_cast<int>(y));
-            int boxW_int = std::min(imgWidth - boxX, static_cast<int>(boxW));
-            int boxH_int = std::min(imgHeight - boxY, static_cast<int>(boxH));
+            if (boxFormat == XYXY_CORNER) {
+                // YOLO11 anchor-free 格式: x1, y1, x2, y2
+                box = lbInfo.toOriginal(b0, b1, b2, b3);
+            } else {
+                // YOLOv8 传统格式: cx, cy, w, h
+                float mx1 = b0 - b2 / 2.0f;
+                float my1 = b1 - b3 / 2.0f;
+                float mx2 = b0 + b2 / 2.0f;
+                float my2 = b1 + b3 / 2.0f;
+                box = lbInfo.toOriginal(mx1, my1, mx2, my2);
+            }
 
-            boxes.emplace_back(boxX, boxY, boxW_int, boxH_int);
+            if (box.width <= 0 || box.height <= 0) continue;
+
+            boxes.push_back(box);
             confidences.push_back(maxConf);
             classIds.push_back(classId);
         }

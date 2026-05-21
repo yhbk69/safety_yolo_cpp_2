@@ -92,8 +92,10 @@ public:
         // 输出格式 [channels, 8400], 从 getOutputSize() 推断
         int numAnchors = 8400;
         int numChannels = static_cast<int>(getOutputSize()) / numAnchors;
+        auto lbInfo = Postprocessor::LetterboxInfo::compute(imgWidth, imgHeight);
         detections = Postprocessor::decodeDetections(output.data(), numAnchors, numChannels,
-                                                       imgWidth, imgHeight,
+                                                       lbInfo,
+                                                       Postprocessor::XYWH_CENTER,
                                                        confThreshold, iouThreshold);
     }
 
@@ -132,9 +134,12 @@ public:
         detectionsList.resize(batchSize);
         for (int i = 0; i < batchSize; ++i) {
             float* frameOut = output.data() + i * getOutputSize();
+            auto lbInfo = Postprocessor::LetterboxInfo::compute(imgSizes[i].first, imgSizes[i].second);
             detectionsList[i] = Postprocessor::decodeDetections(
                 frameOut, numAnchors, numChannels,
-                imgSizes[i].first, imgSizes[i].second, confThreshold, iouThreshold);
+                lbInfo,
+                Postprocessor::XYWH_CENTER,
+                confThreshold, iouThreshold);
         }
     }
 

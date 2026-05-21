@@ -342,7 +342,12 @@ void MainWindow::onBrowseModel() {
     QString filePath = QFileDialog::getOpenFileName(
         this, "选择YOLO11模型文件",
         QString::fromStdString(Config::MODEL_PATH),
-        "TensorRT Engine文件 (*.engine);;所有文件 (*)");
+        "模型文件 (*.engine *.rknn *.onnx *.pt);;"
+        "TensorRT Engine (*.engine);;"
+        "RKNN Model (*.rknn);;"
+        "ONNX Model (*.onnx);;"
+        "PyTorch Model (*.pt);;"
+        "所有文件 (*)");
     if (!filePath.isEmpty()) ui->modelPathEdit->setText(filePath);
 }
 
