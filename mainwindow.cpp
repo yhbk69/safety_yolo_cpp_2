@@ -532,7 +532,7 @@ void MainWindow::onAddCamera() {
     dlg.setMinimumWidth(420);
     auto* layout = new QFormLayout(&dlg);
     auto* srcEdit = new QLineEdit(&dlg);
-    srcEdit->setPlaceholderText("摄像头设备ID(0,1,2...) 或 RTSP 地址");
+    srcEdit->setPlaceholderText("IP:端口 (例: 192.168.1.100:8554) 或完整RTSP地址");
     auto* aliasEdit = new QLineEdit(&dlg);
     aliasEdit->setPlaceholderText("可选, 留空则使用源地址");
     auto* btnBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
