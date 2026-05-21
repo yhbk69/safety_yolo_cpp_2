@@ -25,6 +25,7 @@ qrc_*.cpp
 *.pth
 *.weights
 *.trt
+*.rknn
 
 # Output directory
 output/
