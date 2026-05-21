@@ -48,8 +48,8 @@ bool VideoRecorder::startRecording(int cameraId, double fps, const QString& alia
     if (!alias.isEmpty())  session->alias  = alias;
     if (!source.isEmpty()) session->source = source;
 
-    // 获取录像目录
-    QString cameraDir = getCameraDirPath(cameraId);
+    // 获取录像目录 (在持锁期间调用, 但 mkpath 移到循环外)
+    QString cameraDir = getCameraDirPathNoMkpath(cameraId);
     if (cameraDir.isEmpty()) return false;
 
     // 生成文件名: camera_ID_HHMMSS.mp4
@@ -67,6 +67,10 @@ bool VideoRecorder::startRecording(int cameraId, double fps, const QString& alia
     if (callbacks_.updateButtons) {
         callbacks_.updateButtons(true);
     }
+
+    // 在锁外创建目录 (避免持锁期间执行 I/O)
+    locker.unlock();
+    QDir().mkpath(cameraDir);
 
     return true;
 }
@@ -291,9 +295,17 @@ QString VideoRecorder::getDateDirPath() const {
 }
 
 QString VideoRecorder::getCameraDirPath(int cameraId) const {
+    QString path = getCameraDirPathNoMkpath(cameraId);
+    QDir().mkpath(path);
+    return path;
+}
+
+QString VideoRecorder::getCameraDirPathNoMkpath(int cameraId) const {
     QString dateDir = getDateDirPath();
     QString cameraDir;
 
+    // 注意: 此函数不持锁, 调用者需要确保 sessions_ 安全访问
+    // (startRecording 中已持锁调用)
     auto it = sessions_.find(cameraId);
     if (it != sessions_.end()) {
         QString alias = it->second->alias;
@@ -314,7 +326,5 @@ QString VideoRecorder::getCameraDirPath(int cameraId) const {
     }
     if (cameraDir.isEmpty()) cameraDir = QString("camera_%1").arg(cameraId);
 
-    QString fullPath = dateDir + "/" + cameraDir;
-    QDir().mkpath(fullPath);
-    return fullPath;
+    return dateDir + "/" + cameraDir;
 }

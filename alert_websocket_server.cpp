@@ -165,21 +165,23 @@ void AlertWebSocketServer::checkPendingAlarms() {
     }
 
     for (int i = pendingAlarms_.size() - 1; i >= 0; --i) {
-        PendingAlarm& alarm = pendingAlarms_[i];
-        alarm.retryCount++;
+        pendingAlarms_[i].retryCount++;
 
-        if (alarm.retryCount >= PendingAlarm::MAX_RETRIES) {
+        if (pendingAlarms_[i].retryCount >= PendingAlarm::MAX_RETRIES) {
             // 超过最大重试次数, 放弃
             if (logCallback_) {
-                logCallback_(QStringLiteral("告警"), QString("告警[%1]已重试%2次, 超时放弃").arg(alarm.alarmId).arg(alarm.retryCount));
+                logCallback_(QStringLiteral("告警"), QString("告警[%1]已重试%2次, 超时放弃")
+                    .arg(pendingAlarms_[i].alarmId).arg(pendingAlarms_[i].retryCount));
             }
             pendingAlarms_.removeAt(i);
         } else {
-            // 重传
+            // 重传 (使用局部变量避免 removeAt 后引用悬空)
+            PendingAlarm alarmCopy = pendingAlarms_[i];
             if (logCallback_) {
-                logCallback_(QStringLiteral("告警"), QString("告警[%1]未收到ACK, 第%2次重传").arg(alarm.alarmId).arg(alarm.retryCount));
+                logCallback_(QStringLiteral("告警"), QString("告警[%1]未收到ACK, 第%2次重传")
+                    .arg(alarmCopy.alarmId).arg(alarmCopy.retryCount));
             }
-            sendAlarmToClients(alarm);
+            sendAlarmToClients(alarmCopy);
         }
     }
 }

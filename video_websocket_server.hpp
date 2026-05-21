@@ -9,6 +9,7 @@
 #include <QList>
 #include <QMutex>
 #include <chrono>
+#include <atomic>
 #include <functional>
 #include "output_sink.hpp"
 
@@ -33,6 +34,7 @@ private:
     QWebSocketServer* server_ = nullptr;
     QList<QWebSocket*> clients_;
     mutable QMutex mutex_;
+    std::atomic<int> frameCounter_{0};  // 原子计数器, 避免数据竞争
     std::chrono::steady_clock::time_point lastFrameTime_;
     std::function<void(const QString&, const QString&)> logCallback_;
 };

@@ -116,8 +116,8 @@ void VideoWebSocketServer::pushFrame(const QByteArray& jpegData) {
     }
 
     // 每60帧 (~2秒) 输出一次日志
-    static int frameCounter = 0;
-    if (++frameCounter % 60 == 0 && logCallback_) {
+    int counter = ++frameCounter_;
+    if (counter % 60 == 0 && logCallback_) {
         logCallback_(QStringLiteral("视频流"), QStringLiteral("推送帧 %1 bytes 到 %2 个客户端").arg(jpegData.size()).arg(sentCount));
     }
 }

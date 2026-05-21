@@ -259,19 +259,27 @@ MainWindow::MainWindow(QWidget *parent)
 }
 
 MainWindow::~MainWindow() {
+    // 先通知所有工作线程停止
+    const auto workerThreads = findChildren<QThread*>();
+    for (auto* t : workerThreads) {
+        if (auto* worker = t->findChild<InferenceWorker*>()) {
+            worker->stop();
+        }
+    }
+
     stopAllCameras();
     if (isProcessing_) {
         isProcessing_ = false;
     }
 
-    // 备份: 等待所有工作线程自然退出, 避免 ~QThread 触发 assert
-    // 不使用 terminate(): 强制终止线程会使该线程持有的 std::mutex 处于未定义状态,
-    // 后续 mutex 析构时抛 std::system_error。阻塞在 readFrame() 的线程会由
-    // 进程退出时的 OS 清理。
+    // 等待所有工作线程自然退出 (增加超时)
     const auto threads = findChildren<QThread*>();
     for (auto* t : threads) {
         t->quit();
-        t->wait(5000);
+        if (!t->wait(10000)) {
+            qDebug() << "[WARN] ~MainWindow: thread" << t << "timed out";
+            // 不调用 terminate(), 让 OS 在进程退出时清理
+        }
     }
 
     // 清理 HTTP 文件服务器
@@ -1101,20 +1109,29 @@ void MainWindow::enableControls(bool enabled) {
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     saveRuntimeConfig();
+
+    // 先清理所有 VideoSource, 解除 readFrame() 阻塞
+    const auto workerThreads = findChildren<QThread*>();
+    for (auto* t : workerThreads) {
+        if (auto* worker = t->findChild<InferenceWorker*>()) {
+            worker->stop();
+        }
+    }
+
     stopAllCameras();
 
     // 清理输出通道 (必须在 stopAllCameras 之后, 避免 videoRecorder_ 悬空)
     videoRecorder_ = nullptr;
     sinks_.clear();
 
-    // 等待所有工作线程退出 (应用关闭时可以阻塞等待)
+    // 等待所有工作线程退出 (增加超时时间, 避免 RTSP 断连时卡死)
     const auto threads = findChildren<QThread*>();
     for (auto* t : threads) {
         t->quit();
-        if (!t->wait(3000)) {
-            qDebug() << "[WARN] closeEvent: thread" << t << "timed out, terminating";
+        if (!t->wait(10000)) {  // 10 秒超时
+            qDebug() << "[WARN] closeEvent: thread" << t << "timed out, requesting termination";
             t->terminate();
-            t->wait(1000);
+            t->wait(2000);
         }
     }
 

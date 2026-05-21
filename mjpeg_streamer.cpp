@@ -94,6 +94,7 @@ void MjpegStreamer::stop() {
 }
 
 int MjpegStreamer::clientCount() const {
+    QMutexLocker locker(&clientsMutex_);
     return clients_.size();
 }
 

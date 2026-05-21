@@ -132,15 +132,23 @@ InferenceWorker::FrameResult InferenceWorker::processOneFrame(
     checkAlert(detections, displayImg);
 
     // 告警录制后续帧
-    if (alertRecording_ && alertRemainingFrames_ > 0) {
-        alertBuffer_.push_back(displayImg);
-        alertRemainingFrames_--;
-        if (alertRemainingFrames_ == 0) {
+    if (alertRecording_) {
+        bool shouldSave = false;
+        {
+            std::lock_guard<std::mutex> lock(alertRecordMutex_);
+            if (alertRemainingFrames_ > 0) {
+                alertBuffer_.push_back(displayImg);
+                alertRemainingFrames_--;
+                if (alertRemainingFrames_ == 0) {
+                    shouldSave = true;
+                }
+            }
+        }
+        if (shouldSave) {
             saveAlertFiles(QUuid::createUuid().toString(QUuid::WithoutBraces),
                           pendingAlarmType_);
             alertRecording_ = false;
             alertBuffer_.clear();
-            pendingAlarmType_.clear();
         }
     }
 
@@ -174,9 +182,12 @@ void InferenceWorker::checkAlert(
 
         // 触发告警, 开始录制
         alertRecording_ = true;
-        alertRemainingFrames_ = Config::ALERT_AFTER_FRAMES;
-        pendingAlarmType_ = QString::fromStdString(name);
-        triggerFrame_ = annotatedFrame;  // 保存触发告警的那一帧
+        {
+            std::lock_guard<std::mutex> lock(alertRecordMutex_);
+            alertRemainingFrames_ = Config::ALERT_AFTER_FRAMES;
+            pendingAlarmType_ = QString::fromStdString(name);
+            triggerFrame_ = annotatedFrame;  // 保存触发告警的那一帧
+        }
 
         qDebug() << "[InferenceWorker] 触发告警! camera=" << cameraName_
                  << ", type=" << QString::fromStdString(name) << ", 开始录制" << Config::ALERT_AFTER_FRAMES << "帧";
@@ -223,12 +234,20 @@ void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alar
     int fourcc = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
     cv::VideoWriter writer(videoPath.toStdString(), fourcc, 30.0,
                            cv::Size(frameW, frameH));
+    bool videoOk = false;
     if (writer.isOpened()) {
         for (auto& f : alertBuffer_) {
             writer.write(toBgr(f));
         }
         writer.release();
-        qDebug() << "[InferenceWorker] 视频已写入:" << videoPath;
+        // 验证文件是否确实存在且非空
+        QFileInfo fi(videoPath);
+        videoOk = fi.exists() && fi.size() > 0;
+        if (videoOk) {
+            qDebug() << "[InferenceWorker] 视频已写入:" << videoPath << "(" << fi.size() << "bytes)";
+        } else {
+            qWarning() << "[InferenceWorker] 视频写入失败或文件为空:" << videoPath;
+        }
     } else {
         qWarning() << "[InferenceWorker] 无法打开视频写入器:" << videoPath;
     }
@@ -260,11 +279,18 @@ void InferenceWorker::saveAlertFiles(const QString& alarmId, const QString& alar
     QString alertJson = QString::fromUtf8(
         QJsonDocument(root).toJson(QJsonDocument::Compact));
 
+    // 只在视频文件验证成功后才发送告警信号
+    if (!videoOk) {
+        qWarning() << "[InferenceWorker] 视频写入失败, 跳过告警推送";
+        triggerFrame_.reset();
+        return;
+    }
+
     qDebug() << "[InferenceWorker] 告警JSON:" << alertJson;
     qDebug() << "[InferenceWorker] 发送 alertSaved 信号...";
 
     emit alertSaved(cameraId_, videoPath, imagePath, alertJson);
-    
+
     // 清理触发帧, 准备下一次告警
     triggerFrame_.reset();
 }

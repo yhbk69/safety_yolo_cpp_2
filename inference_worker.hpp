@@ -92,8 +92,9 @@ private:
     mutable std::mutex alertCooldownMutex_;
     std::unordered_map<int, std::chrono::steady_clock::time_point> lastAlertTime_;
 
-    // 告警录制状态
+    // 告警录制状态 (用 mutex 保护, 避免数据竞争)
     std::atomic<bool> alertRecording_{false};
+    mutable std::mutex alertRecordMutex_;
     int alertRemainingFrames_ = 0;
     std::deque<std::shared_ptr<cv::Mat>> alertBuffer_;
     QString pendingAlarmType_;

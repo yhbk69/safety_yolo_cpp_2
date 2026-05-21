@@ -12,6 +12,8 @@
 #include <QThread>
 #include <QMap>
 #include <QList>
+#include <QMutex>
+#include <atomic>
 #include <functional>
 #include "inference_worker.hpp"
 
@@ -47,16 +49,17 @@ public:
 
     // --- ID 管理 ---
 
-    int allocateId() { return nextCameraId_++; }
-    int nextId() const { return nextCameraId_; }
+    int allocateId() { return nextCameraId_.fetch_add(1); }
+    int nextId() const { return nextCameraId_.load(); }
 
     // --- 批量设置 ---
 
     void setBatchInference(bool enabled);
 
 private:
+    mutable QMutex mutex_;
     QMap<int, Entry> entries_;
-    int nextCameraId_ = 1;
+    std::atomic<int> nextCameraId_{1};
     Callbacks callbacks_;
 };
 

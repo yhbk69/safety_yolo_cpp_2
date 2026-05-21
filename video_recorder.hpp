@@ -135,6 +135,7 @@ private:
     QString getRecordDirPath() const;
     QString getDateDirPath() const;
     QString getCameraDirPath(int cameraId) const;
+    QString getCameraDirPathNoMkpath(int cameraId) const;  // 不创建目录的版本
 
     mutable QMutex mutex_;
     std::map<int, std::unique_ptr<RecordingSession>> sessions_;
