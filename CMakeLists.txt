@@ -23,6 +23,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # 启用 UTF-8 源文件编码(解决 Windows 下中文乱码问题)
 add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
 
+# 兼容新版 MSVC (VS 2022+): Qt 5.15.2 头文件中使用了 stdext 命名空间
+# 新版 MSVC 标准库已移除 stdext, 通过此宏恢复兼容性
+add_compile_definitions("$<$<CXX_COMPILER_ID:MSVC>:_HAS_STDEXT_ITERATOR=1>")
+add_compile_definitions("$<$<CXX_COMPILER_ID:MSVC>:_SILENCE_STDEXT_ITERATOR_DEPRECATION_WARNING>")
+
 # 自动生成 MOC 文件(处理 Q_OBJECT 宏, Qt 必需)
 set(CMAKE_AUTOMOC ON)
 

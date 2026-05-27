@@ -182,6 +182,9 @@ InferenceWorker::FrameResult InferenceWorker::processOneFrame(
 void InferenceWorker::checkAlert(
     const std::vector<Detection>& detections, const std::shared_ptr<cv::Mat>& annotatedFrame)
 {
+    // 如果已经在录制告警中, 不再重复触发, 避免 alertRemainingFrames_ 被持续重置
+    if (alertRecording_) return;
+
     for (const auto& det : detections) {
         const auto& name = Config::CLASS_NAMES[det.class_id];
         if (name.find("no_") != 0) continue;
@@ -212,6 +215,24 @@ void InferenceWorker::checkAlert(
             alertBuffer_ = frameBuffer_;
         }
         alertBuffer_.push_back(annotatedFrame);
+
+        // ================================================================
+        // 立即推送告警通知（不用等视频录完，避免延迟）
+        // ================================================================
+        QString alarmId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        QString hostIp = QString::fromStdString(Config::HOST_IP);
+        QJsonObject data;
+        data["alarm_id"]   = alarmId;
+        data["alarm_type"] = QString::fromStdString(name);
+        data["timestamp"]  = QDateTime::currentDateTime().toMSecsSinceEpoch();
+        QJsonObject root;
+        root["type"] = "alarm";
+        root["data"] = data;
+        QString alertJson = QString::fromUtf8(
+            QJsonDocument(root).toJson(QJsonDocument::Compact));
+
+        qDebug() << "[InferenceWorker] 立即推送告警通知:" << alertJson;
+        emit alertSaved(cameraId_, QString(), QString(), alertJson);
 
         return;
     }

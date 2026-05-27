@@ -109,7 +109,7 @@ namespace Postprocessor {
         for (const auto& det : detections) {
             std::string className = Config::CLASS_NAMES[det.class_id];
             // no_xx 用红色，正常用绿色
-            cv::Scalar boxColor = (className.find("no_") == 0) ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 255, 0);
+            cv::Scalar boxColor = (className.find("no_") == 0) ? cv::Scalar(0, 165, 255) : cv::Scalar(0, 255, 0);
             char confBuf[8];
             snprintf(confBuf, sizeof(confBuf), "%.3f", det.conf);
             std::string label = className + ": " + confBuf;
