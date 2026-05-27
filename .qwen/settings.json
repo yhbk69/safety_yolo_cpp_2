@@ -32,7 +32,8 @@
       "Bash(file *)",
       "Bash(ldd *)",
       "Bash(which *)",
-      "Bash(timeout *)"
+      "Bash(timeout *)",
+      "Bash(make *)"
     ]
   },
   "$version": 4

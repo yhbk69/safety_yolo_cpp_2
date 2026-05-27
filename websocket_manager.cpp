@@ -9,6 +9,7 @@
 #include <QHostAddress>
 #include <QObject>
 #include <QDateTime>
+#include <QTimer>
 
 WebSocketManager::WebSocketManager()
     : connCtx_(new QObject())
@@ -16,6 +17,7 @@ WebSocketManager::WebSocketManager()
 }
 
 WebSocketManager::~WebSocketManager() {
+    stopBatteryBroadcast();
     stop();
     delete connCtx_;
 }
@@ -87,6 +89,37 @@ void WebSocketManager::setGetStreamsCallback(std::function<QList<StreamInfo>()> 
 void WebSocketManager::setViewStreamCallback(std::function<QString(const QString&)> callback) {
     QMutexLocker locker(&mutex_);
     viewStreamCallback_ = std::move(callback);
+}
+
+void WebSocketManager::setGetBatteryLevelCallback(std::function<QString()> callback) {
+    QMutexLocker locker(&mutex_);
+    getBatteryLevelCallback_ = std::move(callback);
+}
+
+void WebSocketManager::startBatteryBroadcast(int intervalMs) {
+    stopBatteryBroadcast();
+    
+    batteryTimer_ = new QTimer(connCtx_);
+    QObject::connect(batteryTimer_, &QTimer::timeout, connCtx_, [this]() {
+        broadcastBatteryLevel();
+    });
+    batteryTimer_->start(intervalMs);
+    
+    if (logCallback_) {
+        logCallback_("WS", QString("电量广播已启动, 间隔: %1ms").arg(intervalMs));
+    }
+}
+
+void WebSocketManager::stopBatteryBroadcast() {
+    if (batteryTimer_) {
+        batteryTimer_->stop();
+        delete batteryTimer_;
+        batteryTimer_ = nullptr;
+        
+        if (logCallback_) {
+            logCallback_("WS", "电量广播已停止");
+        }
+    }
 }
 
 // ============================================================
@@ -362,5 +395,32 @@ void WebSocketManager::onClientDisconnected(QWebSocket* socket) {
     if (logCallback_) {
         QMutexLocker locker(&mutex_);
         logCallback_("WS", QString("客户端断开连接, 剩余: %1").arg(clients_.size()));
+    }
+}
+
+// ============================================================
+// 电量管理
+// ============================================================
+
+void WebSocketManager::broadcastBatteryLevel() {
+    QString batteryLevel;
+    
+    if (getBatteryLevelCallback_) {
+        batteryLevel = getBatteryLevelCallback_();
+    }
+    
+    if (batteryLevel.isEmpty()) {
+        batteryLevel = "0%";
+    }
+    
+    QJsonObject batteryMsg;
+    batteryMsg["type"] = "power_level";
+    batteryMsg["value"] = batteryLevel;
+    
+    QString jsonStr = QJsonDocument(batteryMsg).toJson(QJsonDocument::Compact);
+    broadcast(jsonStr);
+    
+    if (logCallback_) {
+        logCallback_("WS", QString("电量广播: %1").arg(batteryLevel));
     }
 }

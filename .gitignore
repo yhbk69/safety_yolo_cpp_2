@@ -37,6 +37,7 @@ output/
 *.suo # VS 解决方案用户选项
 .qwen/
 .claude/
+.trae/
 
 # 保留项目文件（必须提交！）
 !*.sln
